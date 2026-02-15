@@ -1,0 +1,131 @@
+import { useQuery, useMutation } from "@tanstack/react-query";
+import { queryClient, apiRequest } from "@/lib/queryClient";
+import { useToast } from "@/hooks/use-toast";
+import type { Invoice } from "@shared/schema";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Badge } from "@/components/ui/badge";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { History, Download, Trash2, FileText } from "lucide-react";
+import { format } from "date-fns";
+
+export function InvoiceHistory() {
+  const { toast } = useToast();
+
+  const { data: invoices, isLoading } = useQuery<Invoice[]>({
+    queryKey: ["/api/invoices"],
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: async (id: number) => {
+      await apiRequest("DELETE", `/api/invoices/${id}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/invoices"] });
+      toast({ title: "Invoice deleted" });
+    },
+    onError: (err: Error) => {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const handleRedownload = async (invoice: Invoice) => {
+    try {
+      const res = await apiRequest("POST", "/api/invoices/generate", {
+        studentName: invoice.studentName,
+        classDayTime: invoice.classDayTime,
+        ratePerClass: invoice.ratePerClass,
+        attendanceDates: invoice.attendanceDates,
+        comments: invoice.comments,
+      });
+
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `invoice-${invoice.studentName.replace(/\s+/g, "-").toLowerCase()}-${format(new Date(invoice.createdAt), "yyyy-MM-dd")}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (err: any) {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    }
+  };
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <History className="h-5 w-5 text-primary" />
+          Invoice History
+        </CardTitle>
+      </CardHeader>
+      <CardContent>
+        {isLoading ? (
+          <div className="space-y-3">
+            <Skeleton className="h-10 w-full" />
+            <Skeleton className="h-10 w-full" />
+            <Skeleton className="h-10 w-full" />
+          </div>
+        ) : !invoices || invoices.length === 0 ? (
+          <div className="text-center py-12">
+            <FileText className="h-12 w-12 mx-auto text-muted-foreground/50 mb-3" />
+            <p className="text-muted-foreground">No invoices generated yet.</p>
+            <p className="text-sm text-muted-foreground">Create your first invoice from the Create Invoice tab.</p>
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Date</TableHead>
+                  <TableHead>Student</TableHead>
+                  <TableHead>Class</TableHead>
+                  <TableHead>Classes</TableHead>
+                  <TableHead>Total</TableHead>
+                  <TableHead className="w-[100px]">Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {invoices.map((inv) => {
+                  const total = inv.attendanceDates.length * parseFloat(inv.ratePerClass);
+                  return (
+                    <TableRow key={inv.id} data-testid={`row-invoice-${inv.id}`}>
+                      <TableCell className="text-muted-foreground">
+                        {format(new Date(inv.createdAt), "MMM d, yyyy")}
+                      </TableCell>
+                      <TableCell className="font-medium">{inv.studentName}</TableCell>
+                      <TableCell>{inv.classDayTime}</TableCell>
+                      <TableCell>
+                        <Badge variant="secondary">{inv.attendanceDates.length}</Badge>
+                      </TableCell>
+                      <TableCell className="font-medium">${total.toFixed(2)}</TableCell>
+                      <TableCell>
+                        <div className="flex items-center gap-1">
+                          <Button size="icon" variant="ghost" onClick={() => handleRedownload(inv)} data-testid={`button-download-invoice-${inv.id}`}>
+                            <Download className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            onClick={() => deleteMutation.mutate(inv.id)}
+                            disabled={deleteMutation.isPending}
+                            data-testid={`button-delete-invoice-${inv.id}`}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}

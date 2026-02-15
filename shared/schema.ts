@@ -1,18 +1,30 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, varchar } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, integer, date, numeric, serial, timestamp } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
-export const users = pgTable("users", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  username: text("username").notNull().unique(),
-  password: text("password").notNull(),
+export const students = pgTable("students", {
+  id: serial("id").primaryKey(),
+  fullName: text("full_name").notNull(),
+  classDayTime: text("class_day_time").notNull(),
+  ratePerClass: numeric("rate_per_class", { precision: 10, scale: 2 }).notNull(),
 });
 
-export const insertUserSchema = createInsertSchema(users).pick({
-  username: true,
-  password: true,
+export const invoices = pgTable("invoices", {
+  id: serial("id").primaryKey(),
+  studentId: integer("student_id").notNull(),
+  studentName: text("student_name").notNull(),
+  classDayTime: text("class_day_time").notNull(),
+  ratePerClass: numeric("rate_per_class", { precision: 10, scale: 2 }).notNull(),
+  attendanceDates: text("attendance_dates").array().notNull(),
+  comments: text("comments"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
-export type InsertUser = z.infer<typeof insertUserSchema>;
-export type User = typeof users.$inferSelect;
+export const insertStudentSchema = createInsertSchema(students).omit({ id: true });
+export const insertInvoiceSchema = createInsertSchema(invoices).omit({ id: true, createdAt: true });
+
+export type InsertStudent = z.infer<typeof insertStudentSchema>;
+export type Student = typeof students.$inferSelect;
+export type InsertInvoice = z.infer<typeof insertInvoiceSchema>;
+export type Invoice = typeof invoices.$inferSelect;
