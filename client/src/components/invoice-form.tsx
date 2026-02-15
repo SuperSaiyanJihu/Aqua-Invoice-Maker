@@ -30,11 +30,25 @@ export function InvoiceForm() {
     queryKey: ["/api/students"],
   });
 
-  const selectedStudent = students?.find((s) => s.id.toString() === selectedStudentId);
+  const handleStudentSelect = (value: string) => {
+    setSelectedStudentId(value);
+    if (value === "manual") {
+      setManualName("");
+      setManualClassDayTime("");
+      setManualRate("");
+    } else if (value) {
+      const student = students?.find((s) => s.id.toString() === value);
+      if (student) {
+        setManualName(student.fullName);
+        setManualClassDayTime(student.classDayTime);
+        setManualRate(student.ratePerClass);
+      }
+    }
+  };
 
-  const studentName = selectedStudent ? selectedStudent.fullName : manualName;
-  const classDayTime = selectedStudent ? selectedStudent.classDayTime : manualClassDayTime;
-  const ratePerClass = selectedStudent ? selectedStudent.ratePerClass : manualRate;
+  const studentName = manualName;
+  const classDayTime = manualClassDayTime;
+  const ratePerClass = manualRate;
 
   const datesByMonth = selectedDates.reduce<Record<string, Date[]>>((acc, d) => {
     const key = format(d, "MMMM yyyy");
@@ -132,7 +146,7 @@ export function InvoiceForm() {
               <>
                 <div className="space-y-2">
                   <Label>Select Saved Student</Label>
-                  <Select value={selectedStudentId} onValueChange={setSelectedStudentId}>
+                  <Select value={selectedStudentId} onValueChange={handleStudentSelect}>
                     <SelectTrigger data-testid="select-student">
                       <SelectValue placeholder="Choose a student or enter manually below" />
                     </SelectTrigger>
@@ -147,66 +161,47 @@ export function InvoiceForm() {
                   </Select>
                 </div>
 
-                {(!selectedStudentId || selectedStudentId === "manual") && (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="studentName">Student Full Name</Label>
-                      <Input
-                        id="studentName"
-                        placeholder="e.g. John Smith"
-                        value={manualName}
-                        onChange={(e) => setManualName(e.target.value)}
-                        data-testid="input-student-name"
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="classDayTime">
-                        <Clock className="h-3.5 w-3.5 inline mr-1" />
-                        Class Day/Time or Drop Ins
-                      </Label>
-                      <Input
-                        id="classDayTime"
-                        placeholder="e.g. Monday 4:00 PM"
-                        value={manualClassDayTime}
-                        onChange={(e) => setManualClassDayTime(e.target.value)}
-                        data-testid="input-class-day-time"
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="rate">
-                        <DollarSign className="h-3.5 w-3.5 inline mr-1" />
-                        Rate per Class ($)
-                      </Label>
-                      <Input
-                        id="rate"
-                        type="number"
-                        step="0.01"
-                        min="0"
-                        placeholder="e.g. 35.00"
-                        value={manualRate}
-                        onChange={(e) => setManualRate(e.target.value)}
-                        data-testid="input-rate"
-                      />
-                    </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="studentName">Student Full Name</Label>
+                    <Input
+                      id="studentName"
+                      placeholder="e.g. John Smith"
+                      value={manualName}
+                      onChange={(e) => setManualName(e.target.value)}
+                      data-testid="input-student-name"
+                    />
                   </div>
-                )}
-
-                {selectedStudentId && selectedStudentId !== "manual" && selectedStudent && (
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 rounded-md bg-muted/50 p-4">
-                    <div>
-                      <p className="text-xs text-muted-foreground">Student</p>
-                      <p className="font-medium" data-testid="text-selected-student">{selectedStudent.fullName}</p>
-                    </div>
-                    <div>
-                      <p className="text-xs text-muted-foreground">Class</p>
-                      <p className="font-medium">{selectedStudent.classDayTime}</p>
-                    </div>
-                    <div>
-                      <p className="text-xs text-muted-foreground">Rate</p>
-                      <p className="font-medium">${parseFloat(selectedStudent.ratePerClass).toFixed(2)}/class</p>
-                    </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="classDayTime">
+                      <Clock className="h-3.5 w-3.5 inline mr-1" />
+                      Class Day/Time or Drop Ins
+                    </Label>
+                    <Input
+                      id="classDayTime"
+                      placeholder="e.g. Monday 4:00 PM"
+                      value={manualClassDayTime}
+                      onChange={(e) => setManualClassDayTime(e.target.value)}
+                      data-testid="input-class-day-time"
+                    />
                   </div>
-                )}
+                  <div className="space-y-2">
+                    <Label htmlFor="rate">
+                      <DollarSign className="h-3.5 w-3.5 inline mr-1" />
+                      Rate per Class ($)
+                    </Label>
+                    <Input
+                      id="rate"
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      placeholder="e.g. 35.00"
+                      value={manualRate}
+                      onChange={(e) => setManualRate(e.target.value)}
+                      data-testid="input-rate"
+                    />
+                  </div>
+                </div>
               </>
             )}
           </CardContent>
