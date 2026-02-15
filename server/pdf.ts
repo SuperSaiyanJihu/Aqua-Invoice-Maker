@@ -74,14 +74,12 @@ export async function generateInvoicePdf(data: InvoiceData): Promise<Buffer> {
 
     const tableLeft = 50;
     const colDate = tableLeft;
-    const colDesc = tableLeft + 160;
     const colRate = tableLeft + 380;
     const tableRight = doc.page.width - 50;
 
     doc.rect(tableLeft, y, pageWidth, 22).fill("#1a5276");
     doc.fontSize(10).font("Helvetica-Bold").fillColor("#ffffff");
-    doc.text("Date", colDate + 8, y + 6, { width: 150 });
-    doc.text("Description", colDesc + 8, y + 6, { width: 200 });
+    doc.text("Date", colDate + 8, y + 6, { width: 350 });
     doc.text("Amount", colRate + 8, y + 6, { width: 80, align: "right" });
     y += 22;
 
@@ -104,8 +102,7 @@ export async function generateInvoicePdf(data: InvoiceData): Promise<Buffer> {
         }
 
         doc.fontSize(9).font("Helvetica").fillColor("#333333");
-        doc.text(format(d, "EEEE, MMMM d, yyyy"), colDate + 8, y + 5, { width: 150 });
-        doc.text("Swimming Lesson", colDesc + 8, y + 5, { width: 200 });
+        doc.text(format(d, "EEEE, MMMM d, yyyy"), colDate + 8, y + 5, { width: 350 });
         doc.text(`$${data.ratePerClass.toFixed(2)}`, colRate + 8, y + 5, { width: 80, align: "right" });
 
         y += 20;

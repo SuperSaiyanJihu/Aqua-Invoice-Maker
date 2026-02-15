@@ -162,7 +162,7 @@ export function InvoiceForm() {
                     <div className="space-y-2">
                       <Label htmlFor="classDayTime">
                         <Clock className="h-3.5 w-3.5 inline mr-1" />
-                        Class Day/Time
+                        Class Day/Time or Drop Ins
                       </Label>
                       <Input
                         id="classDayTime"
