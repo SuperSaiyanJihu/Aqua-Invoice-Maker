@@ -8,6 +8,7 @@ import { StudentManager } from "@/components/student-manager";
 import { InvoiceHistory } from "@/components/invoice-history";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { FileText, Users, History } from "lucide-react";
+import logoImg from "@assets/excel-aquatics_1771703174250.png";
 
 export default function Home() {
   return (
@@ -15,7 +16,7 @@ export default function Home() {
       <header className="border-b bg-card">
         <div className="max-w-6xl mx-auto px-4 py-4 flex items-center gap-4 flex-wrap">
           <img
-            src="/images/excel-aquatics-logo.png"
+            src={logoImg}
             alt="Excel Aquatics"
             className="h-12 w-auto"
             data-testid="img-logo"
