@@ -5,9 +5,12 @@ Invoice management system for Excel Aquatics swimming school in Colonie, NY. Gen
 
 ## Features
 - **Student Management**: Add, edit, delete students with class day/time and rate per class
-- **Invoice Creation**: Select a student (or enter manually), pick attendance dates on a calendar, add comments, generate PDF
-- **PDF Generation**: Server-side PDF creation with pdfkit. Dates auto-grouped by month. Includes logo, student info, itemized attendance, total cost, and comments
-- **Invoice History**: View past invoices, re-download PDFs, delete records
+- **Two Invoice Types**:
+  - **Attendance Dates**: Select individual dates on calendar, rate per class, auto-grouped by month
+  - **Monthly Charge**: Enter month, year, lesson day, and a flat monthly total
+- **Invoice Creation**: Select a student (or enter manually), choose invoice type, fill in details, add comments, generate PDF
+- **PDF Generation**: Server-side PDF creation with pdfkit. Includes Excel Aquatics logo, student info, and type-specific content
+- **Invoice History**: View past invoices (shows type), re-download PDFs, delete records
 
 ## Architecture
 - **Frontend**: React + Vite + shadcn/ui + TanStack Query + wouter

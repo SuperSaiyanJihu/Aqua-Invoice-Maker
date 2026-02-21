@@ -32,13 +32,32 @@ export function InvoiceHistory() {
 
   const handleRedownload = async (invoice: Invoice) => {
     try {
-      const res = await apiRequest("POST", "/api/invoices/generate", {
-        studentName: invoice.studentName,
-        classDayTime: invoice.classDayTime,
-        ratePerClass: invoice.ratePerClass,
-        attendanceDates: invoice.attendanceDates,
-        comments: invoice.comments,
-      });
+      const isMonthly = invoice.invoiceType === "monthly";
+      let body: any;
+
+      if (isMonthly) {
+        body = {
+          invoiceType: "monthly",
+          studentName: invoice.studentName,
+          classDayTime: invoice.classDayTime,
+          monthlyMonth: invoice.monthlyMonth,
+          monthlyYear: invoice.monthlyYear,
+          monthlyDay: invoice.monthlyDay,
+          monthlyTotal: invoice.monthlyTotal,
+          comments: invoice.comments,
+        };
+      } else {
+        body = {
+          invoiceType: "attendance",
+          studentName: invoice.studentName,
+          classDayTime: invoice.classDayTime,
+          ratePerClass: invoice.ratePerClass,
+          attendanceDates: invoice.attendanceDates,
+          comments: invoice.comments,
+        };
+      }
+
+      const res = await apiRequest("POST", "/api/invoices/generate", body);
 
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
@@ -81,25 +100,34 @@ export function InvoiceHistory() {
               <TableHeader>
                 <TableRow>
                   <TableHead>Date</TableHead>
+                  <TableHead>Type</TableHead>
                   <TableHead>Student</TableHead>
-                  <TableHead>Class</TableHead>
-                  <TableHead>Classes</TableHead>
+                  <TableHead>Details</TableHead>
                   <TableHead>Total</TableHead>
                   <TableHead className="w-[100px]">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {invoices.map((inv) => {
-                  const total = inv.attendanceDates.length * parseFloat(inv.ratePerClass);
+                  const isMonthly = inv.invoiceType === "monthly";
+                  const total = isMonthly
+                    ? parseFloat(inv.monthlyTotal || "0")
+                    : inv.attendanceDates.length * parseFloat(inv.ratePerClass);
                   return (
                     <TableRow key={inv.id} data-testid={`row-invoice-${inv.id}`}>
                       <TableCell className="text-muted-foreground">
                         {format(new Date(inv.createdAt), "MMM d, yyyy")}
                       </TableCell>
-                      <TableCell className="font-medium">{inv.studentName}</TableCell>
-                      <TableCell>{inv.classDayTime}</TableCell>
                       <TableCell>
-                        <Badge variant="secondary">{inv.attendanceDates.length}</Badge>
+                        <Badge variant={isMonthly ? "outline" : "secondary"}>
+                          {isMonthly ? "Monthly" : "Attendance"}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="font-medium">{inv.studentName}</TableCell>
+                      <TableCell>
+                        {isMonthly
+                          ? `${inv.monthlyMonth} ${inv.monthlyYear}`
+                          : `${inv.attendanceDates.length} classes`}
                       </TableCell>
                       <TableCell className="font-medium">${total.toFixed(2)}</TableCell>
                       <TableCell>

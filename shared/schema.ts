@@ -12,11 +12,16 @@ export const students = pgTable("students", {
 
 export const invoices = pgTable("invoices", {
   id: serial("id").primaryKey(),
+  invoiceType: text("invoice_type").notNull().default("attendance"),
   studentId: integer("student_id").notNull(),
   studentName: text("student_name").notNull(),
   classDayTime: text("class_day_time").notNull(),
   ratePerClass: numeric("rate_per_class", { precision: 10, scale: 2 }).notNull(),
   attendanceDates: text("attendance_dates").array().notNull(),
+  monthlyMonth: text("monthly_month"),
+  monthlyYear: text("monthly_year"),
+  monthlyDay: text("monthly_day"),
+  monthlyTotal: numeric("monthly_total", { precision: 10, scale: 2 }),
   comments: text("comments"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
