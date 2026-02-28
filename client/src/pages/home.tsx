@@ -8,7 +8,7 @@ import { StudentManager } from "@/components/student-manager";
 import { InvoiceHistory } from "@/components/invoice-history";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { FileText, Users, History } from "lucide-react";
-import logoImg from "@assets/excel-aquatics_1771703174250.png";
+import logoImg from "@assets/Logo_1772310414809.png";
 
 export default function Home() {
   return (
