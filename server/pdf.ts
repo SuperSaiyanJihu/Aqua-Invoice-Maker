@@ -31,15 +31,15 @@ function renderHeader(doc: PDFKit.PDFDocument, logoPath: string) {
   }
 
   doc.fontSize(18).font("Helvetica-Bold").fillColor("#1a5276");
-  doc.text("Excel Aquatics", 130, 38);
+  doc.text("Excel Aquatics", 130, 38, { lineBreak: false });
   doc.fontSize(9).font("Helvetica").fillColor("#555555");
-  doc.text("Colonie, NY", 130, 60);
+  doc.text("Colonie, NY", 130, 60, { lineBreak: false });
 
   doc.fontSize(18).font("Helvetica-Bold").fillColor("#1a5276");
-  doc.text("INVOICE", doc.page.width - 200, 38, { width: 150, align: "right" });
+  doc.text("INVOICE", doc.page.width - 200, 38, { width: 150, align: "right", lineBreak: false });
 
   doc.fontSize(9).font("Helvetica").fillColor("#666666");
-  doc.text(`Date: ${format(new Date(), "MMMM d, yyyy")}`, doc.page.width - 200, 60, { width: 150, align: "right" });
+  doc.text(`Date: ${format(new Date(), "MMMM d, yyyy")}`, doc.page.width - 200, 60, { width: 150, align: "right", lineBreak: false });
 
   doc.moveTo(50, 85).lineTo(doc.page.width - 50, 85).strokeColor("#1a5276").lineWidth(1.5).stroke();
 }
@@ -48,22 +48,22 @@ function renderStudentInfo(doc: PDFKit.PDFDocument, data: InvoiceData, startY: n
   let y = startY;
 
   doc.fontSize(10).font("Helvetica-Bold").fillColor("#333333");
-  doc.text("Bill To:", 50, y);
+  doc.text("Bill To:", 50, y, { lineBreak: false });
   y += 15;
 
   doc.fontSize(9).font("Helvetica").fillColor("#333333");
-  doc.text(`Student: ${data.studentName}`, 50, y);
+  doc.text(`Student: ${data.studentName}`, 50, y, { lineBreak: false });
   y += 14;
-  doc.text(`Class: ${data.classDayTime}`, 50, y);
+  doc.text(`Class: ${data.classDayTime}`, 50, y, { lineBreak: false });
   y += 14;
 
   if (data.invoiceType === "attendance") {
-    doc.text(`Rate per Class: $${data.ratePerClass.toFixed(2)}`, 50, y);
+    doc.text(`Rate per Class: $${data.ratePerClass.toFixed(2)}`, 50, y, { lineBreak: false });
     y += 20;
   } else {
-    doc.text(`Lesson Day: ${data.monthlyDay}s`, 50, y);
+    doc.text(`Lesson Day: ${data.monthlyDay}s`, 50, y, { lineBreak: false });
     y += 14;
-    doc.text(`Period: ${data.monthlyMonth} ${data.monthlyYear}`, 50, y);
+    doc.text(`Period: ${data.monthlyMonth} ${data.monthlyYear}`, 50, y, { lineBreak: false });
     y += 20;
   }
 
@@ -74,14 +74,14 @@ function renderComments(doc: PDFKit.PDFDocument, comments: string | null, y: num
   if (!comments) return y;
 
   doc.fontSize(10).font("Helvetica-Bold").fillColor("#333333");
-  doc.text("Comments:", 50, y);
+  doc.text("Comments:", 50, y, { lineBreak: false });
   y += 14;
 
   doc.rect(50, y, pageWidth, 1.5).fill("#e0e0e0");
   y += 6;
 
   doc.fontSize(9).font("Helvetica").fillColor("#555555");
-  doc.text(comments, 50, y, { width: pageWidth });
+  doc.text(comments, 50, y, { width: pageWidth, lineBreak: false });
   y += doc.heightOfString(comments, { width: pageWidth }) + 12;
 
   return y;
@@ -91,8 +91,8 @@ function renderFooter(doc: PDFKit.PDFDocument, pageWidth: number) {
   const footerY = doc.page.height - 50;
   doc.moveTo(50, footerY - 8).lineTo(doc.page.width - 50, footerY - 8).strokeColor("#dddddd").lineWidth(0.5).stroke();
   doc.fontSize(8).font("Helvetica").fillColor("#999999");
-  doc.text("Excel Aquatics — Colonie, NY", 50, footerY, { width: pageWidth, align: "center" });
-  doc.text("Thank you for choosing Excel Aquatics!", 50, footerY + 11, { width: pageWidth, align: "center" });
+  doc.text("Excel Aquatics — Colonie, NY", 50, footerY, { width: pageWidth, align: "center", lineBreak: false });
+  doc.text("Thank you for choosing Excel Aquatics!", 50, footerY + 11, { width: pageWidth, align: "center", lineBreak: false });
 }
 
 export async function generateInvoicePdf(data: InvoiceData): Promise<Buffer> {
@@ -103,6 +103,8 @@ export async function generateInvoicePdf(data: InvoiceData): Promise<Buffer> {
     doc.on("data", (chunk: Buffer) => chunks.push(chunk));
     doc.on("end", () => resolve(Buffer.concat(chunks)));
     doc.on("error", reject);
+
+    doc.addPage = (() => doc) as any;
 
     const pageWidth = doc.page.width - 100;
     const logoPath = path.join(process.cwd(), "client", "public", "images", "excel-aquatics-logo.png");
@@ -136,8 +138,8 @@ export async function generateInvoicePdf(data: InvoiceData): Promise<Buffer> {
 
       doc.rect(tableLeft, y, pageWidth, 18).fill("#1a5276");
       doc.fontSize(9).font("Helvetica-Bold").fillColor("#ffffff");
-      doc.text("Date", colDate + 8, y + 4, { width: 350 });
-      doc.text("Amount", colRate + 8, y + 4, { width: 80, align: "right" });
+      doc.text("Date", colDate + 8, y + 4, { width: 350, lineBreak: false });
+      doc.text("Amount", colRate + 8, y + 4, { width: 80, align: "right", lineBreak: false });
       y += 18;
 
       let totalClasses = 0;
@@ -148,7 +150,7 @@ export async function generateInvoicePdf(data: InvoiceData): Promise<Buffer> {
 
         doc.rect(tableLeft, y, pageWidth, 18).fill("#e8f0f8");
         doc.fontSize(9).font("Helvetica-Bold").fillColor("#1a5276");
-        doc.text(month, colDate + 8, y + 4, { width: pageWidth - 16 });
+        doc.text(month, colDate + 8, y + 4, { width: pageWidth - 16, lineBreak: false });
         y += 18;
 
         for (const dateStr of dates) {
@@ -159,8 +161,8 @@ export async function generateInvoicePdf(data: InvoiceData): Promise<Buffer> {
           }
 
           doc.fontSize(8).font("Helvetica").fillColor("#333333");
-          doc.text(format(d, "EEEE, MMMM d, yyyy"), colDate + 8, y + 4, { width: 350 });
-          doc.text(`$${data.ratePerClass.toFixed(2)}`, colRate + 8, y + 4, { width: 80, align: "right" });
+          doc.text(format(d, "EEEE, MMMM d, yyyy"), colDate + 8, y + 4, { width: 350, lineBreak: false });
+          doc.text(`$${data.ratePerClass.toFixed(2)}`, colRate + 8, y + 4, { width: 80, align: "right", lineBreak: false });
 
           y += 16;
           totalClasses++;
@@ -175,8 +177,8 @@ export async function generateInvoicePdf(data: InvoiceData): Promise<Buffer> {
       const totalAmount = `$${(totalClasses * data.ratePerClass).toFixed(2)}`;
       doc.rect(colRate - 120, y, 208, 22).fill("#1a5276");
       doc.fontSize(10).font("Helvetica-Bold").fillColor("#ffffff");
-      doc.text(totalLabel, colRate - 112, y + 5, { width: 120 });
-      doc.text(totalAmount, colRate + 8, y + 5, { width: 80, align: "right" });
+      doc.text(totalLabel, colRate - 112, y + 5, { width: 120, lineBreak: false });
+      doc.text(totalAmount, colRate + 8, y + 5, { width: 80, align: "right", lineBreak: false });
       y += 32;
     } else {
       const tableLeft = 50;
@@ -185,14 +187,14 @@ export async function generateInvoicePdf(data: InvoiceData): Promise<Buffer> {
 
       doc.rect(tableLeft, y, pageWidth, 18).fill("#1a5276");
       doc.fontSize(9).font("Helvetica-Bold").fillColor("#ffffff");
-      doc.text("Description", colLabel + 8, y + 4, { width: 350 });
-      doc.text("Amount", colValue + 8, y + 4, { width: 80, align: "right" });
+      doc.text("Description", colLabel + 8, y + 4, { width: 350, lineBreak: false });
+      doc.text("Amount", colValue + 8, y + 4, { width: 80, align: "right", lineBreak: false });
       y += 18;
 
       doc.rect(tableLeft, y, pageWidth, 22).fill("#f8f9fa");
       doc.fontSize(9).font("Helvetica").fillColor("#333333");
-      doc.text(`${data.monthlyDay} lessons — ${data.monthlyMonth} ${data.monthlyYear}`, colLabel + 8, y + 6, { width: 350 });
-      doc.text(`$${data.monthlyTotal.toFixed(2)}`, colValue + 8, y + 6, { width: 80, align: "right" });
+      doc.text(`${data.monthlyDay} lessons — ${data.monthlyMonth} ${data.monthlyYear}`, colLabel + 8, y + 6, { width: 350, lineBreak: false });
+      doc.text(`$${data.monthlyTotal.toFixed(2)}`, colValue + 8, y + 6, { width: 80, align: "right", lineBreak: false });
       y += 22;
 
       doc.moveTo(tableLeft, y).lineTo(doc.page.width - 50, y).strokeColor("#cccccc").lineWidth(0.5).stroke();
@@ -200,8 +202,8 @@ export async function generateInvoicePdf(data: InvoiceData): Promise<Buffer> {
 
       doc.rect(colValue - 120, y, 208, 22).fill("#1a5276");
       doc.fontSize(10).font("Helvetica-Bold").fillColor("#ffffff");
-      doc.text("Total:", colValue - 112, y + 5, { width: 120 });
-      doc.text(`$${data.monthlyTotal.toFixed(2)}`, colValue + 8, y + 5, { width: 80, align: "right" });
+      doc.text("Total:", colValue - 112, y + 5, { width: 120, lineBreak: false });
+      doc.text(`$${data.monthlyTotal.toFixed(2)}`, colValue + 8, y + 5, { width: 80, align: "right", lineBreak: false });
       y += 32;
     }
 
