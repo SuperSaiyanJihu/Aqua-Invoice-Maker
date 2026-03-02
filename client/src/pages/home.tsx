@@ -1,13 +1,7 @@
-import { useState } from "react";
-import { useQuery, useMutation } from "@tanstack/react-query";
-import { queryClient, apiRequest } from "@/lib/queryClient";
-import { useToast } from "@/hooks/use-toast";
-import type { Student, Invoice } from "@shared/schema";
 import { InvoiceForm } from "@/components/invoice-form";
-import { StudentManager } from "@/components/student-manager";
 import { InvoiceHistory } from "@/components/invoice-history";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { FileText, Users, History } from "lucide-react";
+import { FileText, History } from "lucide-react";
 import logoImg from "@assets/Logo_1772310414809.png";
 
 export default function Home() {
@@ -39,10 +33,6 @@ export default function Home() {
               <FileText className="h-4 w-4 mr-2" />
               Create Invoice
             </TabsTrigger>
-            <TabsTrigger value="students" data-testid="tab-students">
-              <Users className="h-4 w-4 mr-2" />
-              Students
-            </TabsTrigger>
             <TabsTrigger value="history" data-testid="tab-history">
               <History className="h-4 w-4 mr-2" />
               Invoice History
@@ -51,10 +41,6 @@ export default function Home() {
 
           <TabsContent value="create">
             <InvoiceForm />
-          </TabsContent>
-
-          <TabsContent value="students">
-            <StudentManager />
           </TabsContent>
 
           <TabsContent value="history">

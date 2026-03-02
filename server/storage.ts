@@ -1,13 +1,8 @@
-import { type Student, type InsertStudent, type Invoice, type InsertInvoice, students, invoices } from "@shared/schema";
+import { type Invoice, type InsertInvoice, invoices } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc } from "drizzle-orm";
 
 export interface IStorage {
-  getStudents(): Promise<Student[]>;
-  getStudent(id: number): Promise<Student | undefined>;
-  createStudent(student: InsertStudent): Promise<Student>;
-  updateStudent(id: number, student: Partial<InsertStudent>): Promise<Student | undefined>;
-  deleteStudent(id: number): Promise<boolean>;
   getInvoices(): Promise<Invoice[]>;
   getInvoice(id: number): Promise<Invoice | undefined>;
   createInvoice(invoice: InsertInvoice): Promise<Invoice>;
@@ -15,30 +10,6 @@ export interface IStorage {
 }
 
 export class DatabaseStorage implements IStorage {
-  async getStudents(): Promise<Student[]> {
-    return await db.select().from(students);
-  }
-
-  async getStudent(id: number): Promise<Student | undefined> {
-    const [student] = await db.select().from(students).where(eq(students.id, id));
-    return student;
-  }
-
-  async createStudent(student: InsertStudent): Promise<Student> {
-    const [created] = await db.insert(students).values(student).returning();
-    return created;
-  }
-
-  async updateStudent(id: number, student: Partial<InsertStudent>): Promise<Student | undefined> {
-    const [updated] = await db.update(students).set(student).where(eq(students.id, id)).returning();
-    return updated;
-  }
-
-  async deleteStudent(id: number): Promise<boolean> {
-    const result = await db.delete(students).where(eq(students.id, id)).returning();
-    return result.length > 0;
-  }
-
   async getInvoices(): Promise<Invoice[]> {
     return await db.select().from(invoices).orderBy(desc(invoices.createdAt));
   }

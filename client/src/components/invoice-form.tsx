@@ -1,8 +1,6 @@
 import { useState } from "react";
-import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
-import type { Student } from "@shared/schema";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -12,7 +10,6 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Calendar } from "@/components/ui/calendar";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
-import { Skeleton } from "@/components/ui/skeleton";
 import { FileDown, X, CalendarDays, DollarSign, User, Clock, CalendarRange } from "lucide-react";
 import { format } from "date-fns";
 
@@ -28,10 +25,9 @@ const DAYS_OF_WEEK = [
 export function InvoiceForm() {
   const { toast } = useToast();
   const [invoiceType, setInvoiceType] = useState<"attendance" | "monthly">("attendance");
-  const [selectedStudentId, setSelectedStudentId] = useState<string>("");
-  const [manualName, setManualName] = useState("");
-  const [manualClassDayTime, setManualClassDayTime] = useState("");
-  const [manualRate, setManualRate] = useState("");
+  const [studentName, setStudentName] = useState("");
+  const [classDayTime, setClassDayTime] = useState("");
+  const [ratePerClass, setRatePerClass] = useState("");
   const [selectedDates, setSelectedDates] = useState<Date[]>([]);
   const [monthlyMonth, setMonthlyMonth] = useState("");
   const [monthlyYear, setMonthlyYear] = useState(new Date().getFullYear().toString());
@@ -39,30 +35,6 @@ export function InvoiceForm() {
   const [monthlyTotal, setMonthlyTotal] = useState("");
   const [comments, setComments] = useState("");
   const [isGenerating, setIsGenerating] = useState(false);
-
-  const { data: students, isLoading: studentsLoading } = useQuery<Student[]>({
-    queryKey: ["/api/students"],
-  });
-
-  const handleStudentSelect = (value: string) => {
-    setSelectedStudentId(value);
-    if (value === "manual") {
-      setManualName("");
-      setManualClassDayTime("");
-      setManualRate("");
-    } else if (value) {
-      const student = students?.find((s) => s.id.toString() === value);
-      if (student) {
-        setManualName(student.fullName);
-        setManualClassDayTime(student.classDayTime);
-        setManualRate(student.ratePerClass);
-      }
-    }
-  };
-
-  const studentName = manualName;
-  const classDayTime = manualClassDayTime;
-  const ratePerClass = manualRate;
 
   const datesByMonth = selectedDates.reduce<Record<string, Date[]>>((acc, d) => {
     const key = format(d, "MMMM yyyy");
@@ -165,10 +137,9 @@ export function InvoiceForm() {
   };
 
   const handleReset = () => {
-    setSelectedStudentId("");
-    setManualName("");
-    setManualClassDayTime("");
-    setManualRate("");
+    setStudentName("");
+    setClassDayTime("");
+    setRatePerClass("");
     setSelectedDates([]);
     setMonthlyMonth("");
     setMonthlyYear(new Date().getFullYear().toString());
@@ -223,75 +194,49 @@ export function InvoiceForm() {
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
-            {studentsLoading ? (
-              <div className="space-y-3">
-                <Skeleton className="h-10 w-full" />
-                <Skeleton className="h-10 w-full" />
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="studentName">Student Full Name</Label>
+                <Input
+                  id="studentName"
+                  placeholder="e.g. John Smith"
+                  value={studentName}
+                  onChange={(e) => setStudentName(e.target.value)}
+                  data-testid="input-student-name"
+                />
               </div>
-            ) : (
-              <>
+              <div className="space-y-2">
+                <Label htmlFor="classDayTime">
+                  <Clock className="h-3.5 w-3.5 inline mr-1" />
+                  Class Day/Time or Drop Ins
+                </Label>
+                <Input
+                  id="classDayTime"
+                  placeholder="e.g. Monday 4:00 PM"
+                  value={classDayTime}
+                  onChange={(e) => setClassDayTime(e.target.value)}
+                  data-testid="input-class-day-time"
+                />
+              </div>
+              {invoiceType === "attendance" && (
                 <div className="space-y-2">
-                  <Label>Select Saved Student</Label>
-                  <Select value={selectedStudentId} onValueChange={handleStudentSelect}>
-                    <SelectTrigger data-testid="select-student">
-                      <SelectValue placeholder="Choose a student or enter manually below" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="manual">Enter manually</SelectItem>
-                      {students?.map((s) => (
-                        <SelectItem key={s.id} value={s.id.toString()} data-testid={`select-student-${s.id}`}>
-                          {s.fullName} — {s.classDayTime}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <Label htmlFor="rate">
+                    <DollarSign className="h-3.5 w-3.5 inline mr-1" />
+                    Rate per Class ($)
+                  </Label>
+                  <Input
+                    id="rate"
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    placeholder="e.g. 35.00"
+                    value={ratePerClass}
+                    onChange={(e) => setRatePerClass(e.target.value)}
+                    data-testid="input-rate"
+                  />
                 </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="studentName">Student Full Name</Label>
-                    <Input
-                      id="studentName"
-                      placeholder="e.g. John Smith"
-                      value={manualName}
-                      onChange={(e) => setManualName(e.target.value)}
-                      data-testid="input-student-name"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="classDayTime">
-                      <Clock className="h-3.5 w-3.5 inline mr-1" />
-                      Class Day/Time or Drop Ins
-                    </Label>
-                    <Input
-                      id="classDayTime"
-                      placeholder="e.g. Monday 4:00 PM"
-                      value={manualClassDayTime}
-                      onChange={(e) => setManualClassDayTime(e.target.value)}
-                      data-testid="input-class-day-time"
-                    />
-                  </div>
-                  {invoiceType === "attendance" && (
-                    <div className="space-y-2">
-                      <Label htmlFor="rate">
-                        <DollarSign className="h-3.5 w-3.5 inline mr-1" />
-                        Rate per Class ($)
-                      </Label>
-                      <Input
-                        id="rate"
-                        type="number"
-                        step="0.01"
-                        min="0"
-                        placeholder="e.g. 35.00"
-                        value={manualRate}
-                        onChange={(e) => setManualRate(e.target.value)}
-                        data-testid="input-rate"
-                      />
-                    </div>
-                  )}
-                </div>
-              </>
-            )}
+              )}
+            </div>
           </CardContent>
         </Card>
 
