@@ -20,7 +20,7 @@ export default function Home() {
               Excel Aquatics
             </h1>
             <p className="text-sm text-muted-foreground">
-              Invoice Management — Colonie, NY
+              Document Management — Colonie, NY
             </p>
           </div>
         </div>
@@ -31,11 +31,11 @@ export default function Home() {
           <TabsList>
             <TabsTrigger value="create" data-testid="tab-create">
               <FileText className="h-4 w-4 mr-2" />
-              Create Invoice
+              Create Document
             </TabsTrigger>
             <TabsTrigger value="history" data-testid="tab-history">
               <History className="h-4 w-4 mr-2" />
-              Invoice History
+              Document History
             </TabsTrigger>
           </TabsList>
 

@@ -95,7 +95,7 @@ export function InvoiceHistory() {
           <div className="text-center py-12">
             <FileText className="h-12 w-12 mx-auto text-muted-foreground/50 mb-3" />
             <p className="text-muted-foreground">No documents generated yet.</p>
-            <p className="text-sm text-muted-foreground">Create your first invoice or receipt from the Create Invoice tab.</p>
+            <p className="text-sm text-muted-foreground">Create your first document from the Create Document tab.</p>
           </div>
         ) : (
           <div className="overflow-x-auto">

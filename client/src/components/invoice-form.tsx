@@ -165,7 +165,7 @@ export function InvoiceForm() {
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <FileDown className="h-5 w-5 text-primary" />
-              Document &amp; Invoice Type
+              Document &amp; Billing Type
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -282,7 +282,7 @@ export function InvoiceForm() {
             </CardHeader>
             <CardContent>
               <p className="text-sm text-muted-foreground mb-4">
-                Click on dates the student attended class. Dates are automatically grouped by month on the {documentType}.
+                Click on dates the student attended class. Dates are automatically grouped by month on the {docLabel.toLowerCase()}.
               </p>
               <div className="flex justify-center">
                 <Calendar
@@ -410,7 +410,7 @@ export function InvoiceForm() {
       <div className="space-y-6">
         <Card className="sticky top-6">
           <CardHeader>
-            <CardTitle>{docLabel} Summary</CardTitle>
+            <CardTitle data-testid="text-summary-title">{docLabel} Summary</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="space-y-2 text-sm">
