@@ -10,7 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Calendar } from "@/components/ui/calendar";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
-import { FileDown, X, CalendarDays, DollarSign, User, Clock, CalendarRange } from "lucide-react";
+import { FileDown, X, CalendarDays, DollarSign, User, Clock, CalendarRange, FileText, Receipt } from "lucide-react";
 import { format } from "date-fns";
 
 const MONTHS = [
@@ -25,6 +25,7 @@ const DAYS_OF_WEEK = [
 export function InvoiceForm() {
   const { toast } = useToast();
   const [invoiceType, setInvoiceType] = useState<"attendance" | "monthly">("attendance");
+  const [documentType, setDocumentType] = useState<"invoice" | "receipt">("invoice");
   const [studentName, setStudentName] = useState("");
   const [classDayTime, setClassDayTime] = useState("");
   const [ratePerClass, setRatePerClass] = useState("");
@@ -99,6 +100,7 @@ export function InvoiceForm() {
     try {
       const body: any = {
         invoiceType,
+        documentType,
         studentName: studentName.trim(),
         classDayTime: classDayTime.trim(),
         comments: comments.trim() || null,
@@ -120,7 +122,7 @@ export function InvoiceForm() {
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `invoice-${studentName.trim().replace(/\s+/g, "-").toLowerCase()}-${format(new Date(), "yyyy-MM-dd")}.pdf`;
+      a.download = `${documentType}-${studentName.trim().replace(/\s+/g, "-").toLowerCase()}-${format(new Date(), "yyyy-MM-dd")}.pdf`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
@@ -128,15 +130,17 @@ export function InvoiceForm() {
 
       queryClient.invalidateQueries({ queryKey: ["/api/invoices"] });
 
-      toast({ title: "Invoice generated", description: "Your PDF invoice has been downloaded." });
+      const docLabel = documentType === "receipt" ? "Receipt" : "Invoice";
+      toast({ title: `${docLabel} generated`, description: `Your PDF ${documentType} has been downloaded.` });
     } catch (err: any) {
-      toast({ title: "Error", description: err.message || "Failed to generate invoice.", variant: "destructive" });
+      toast({ title: "Error", description: err.message || "Failed to generate document.", variant: "destructive" });
     } finally {
       setIsGenerating(false);
     }
   };
 
   const handleReset = () => {
+    setDocumentType("invoice");
     setStudentName("");
     setClassDayTime("");
     setRatePerClass("");
@@ -152,6 +156,8 @@ export function InvoiceForm() {
     ? !!(studentName && classDayTime && ratePerClass && selectedDates.length > 0)
     : !!(studentName && classDayTime && monthlyMonth && monthlyYear && monthlyDay && monthlyTotal);
 
+  const docLabel = documentType === "receipt" ? "Receipt" : "Invoice";
+
   return (
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
       <div className="lg:col-span-2 space-y-6">
@@ -159,29 +165,55 @@ export function InvoiceForm() {
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <FileDown className="h-5 w-5 text-primary" />
-              Invoice Type
+              Document &amp; Invoice Type
             </CardTitle>
           </CardHeader>
-          <CardContent>
-            <div className="flex gap-3">
-              <Button
-                variant={invoiceType === "attendance" ? "default" : "outline"}
-                onClick={() => setInvoiceType("attendance")}
-                className="flex-1"
-                data-testid="button-type-attendance"
-              >
-                <CalendarDays className="h-4 w-4 mr-2" />
-                Attendance Dates
-              </Button>
-              <Button
-                variant={invoiceType === "monthly" ? "default" : "outline"}
-                onClick={() => setInvoiceType("monthly")}
-                className="flex-1"
-                data-testid="button-type-monthly"
-              >
-                <CalendarRange className="h-4 w-4 mr-2" />
-                Monthly Charge
-              </Button>
+          <CardContent className="space-y-4">
+            <div>
+              <Label className="text-xs text-muted-foreground mb-2 block">Document Type</Label>
+              <div className="flex gap-3">
+                <Button
+                  variant={documentType === "invoice" ? "default" : "outline"}
+                  onClick={() => setDocumentType("invoice")}
+                  className="flex-1"
+                  data-testid="button-doc-invoice"
+                >
+                  <FileText className="h-4 w-4 mr-2" />
+                  Invoice
+                </Button>
+                <Button
+                  variant={documentType === "receipt" ? "default" : "outline"}
+                  onClick={() => setDocumentType("receipt")}
+                  className="flex-1"
+                  data-testid="button-doc-receipt"
+                >
+                  <Receipt className="h-4 w-4 mr-2" />
+                  Receipt
+                </Button>
+              </div>
+            </div>
+            <div>
+              <Label className="text-xs text-muted-foreground mb-2 block">Billing Type</Label>
+              <div className="flex gap-3">
+                <Button
+                  variant={invoiceType === "attendance" ? "default" : "outline"}
+                  onClick={() => setInvoiceType("attendance")}
+                  className="flex-1"
+                  data-testid="button-type-attendance"
+                >
+                  <CalendarDays className="h-4 w-4 mr-2" />
+                  Attendance Dates
+                </Button>
+                <Button
+                  variant={invoiceType === "monthly" ? "default" : "outline"}
+                  onClick={() => setInvoiceType("monthly")}
+                  className="flex-1"
+                  data-testid="button-type-monthly"
+                >
+                  <CalendarRange className="h-4 w-4 mr-2" />
+                  Monthly Charge
+                </Button>
+              </div>
             </div>
           </CardContent>
         </Card>
@@ -250,7 +282,7 @@ export function InvoiceForm() {
             </CardHeader>
             <CardContent>
               <p className="text-sm text-muted-foreground mb-4">
-                Click on dates the student attended class. Dates are automatically grouped by month on the invoice.
+                Click on dates the student attended class. Dates are automatically grouped by month on the {documentType}.
               </p>
               <div className="flex justify-center">
                 <Calendar
@@ -365,7 +397,7 @@ export function InvoiceForm() {
           </CardHeader>
           <CardContent>
             <Textarea
-              placeholder="Add any specific notes or comments to appear on the invoice..."
+              placeholder="Add any specific notes or comments to appear on the document..."
               value={comments}
               onChange={(e) => setComments(e.target.value)}
               rows={3}
@@ -378,12 +410,16 @@ export function InvoiceForm() {
       <div className="space-y-6">
         <Card className="sticky top-6">
           <CardHeader>
-            <CardTitle>Invoice Summary</CardTitle>
+            <CardTitle>{docLabel} Summary</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="space-y-2 text-sm">
               <div className="flex justify-between flex-wrap gap-2">
-                <span className="text-muted-foreground">Type</span>
+                <span className="text-muted-foreground">Document</span>
+                <span className="font-medium" data-testid="text-summary-doc-type">{docLabel}</span>
+              </div>
+              <div className="flex justify-between flex-wrap gap-2">
+                <span className="text-muted-foreground">Billing</span>
                 <span className="font-medium">{invoiceType === "attendance" ? "Attendance Dates" : "Monthly Charge"}</span>
               </div>
               <div className="flex justify-between flex-wrap gap-2">
@@ -450,7 +486,7 @@ export function InvoiceForm() {
                 ) : (
                   <>
                     <FileDown className="h-4 w-4 mr-2" />
-                    Generate PDF Invoice
+                    Generate PDF {docLabel}
                   </>
                 )}
               </Button>

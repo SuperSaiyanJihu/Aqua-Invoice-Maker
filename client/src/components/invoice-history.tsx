@@ -23,7 +23,7 @@ export function InvoiceHistory() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/invoices"] });
-      toast({ title: "Invoice deleted" });
+      toast({ title: "Record deleted" });
     },
     onError: (err: Error) => {
       toast({ title: "Error", description: err.message, variant: "destructive" });
@@ -33,11 +33,13 @@ export function InvoiceHistory() {
   const handleRedownload = async (invoice: Invoice) => {
     try {
       const isMonthly = invoice.invoiceType === "monthly";
+      const docType = invoice.documentType || "invoice";
       let body: any;
 
       if (isMonthly) {
         body = {
           invoiceType: "monthly",
+          documentType: docType,
           studentName: invoice.studentName,
           classDayTime: invoice.classDayTime,
           monthlyMonth: invoice.monthlyMonth,
@@ -49,6 +51,7 @@ export function InvoiceHistory() {
       } else {
         body = {
           invoiceType: "attendance",
+          documentType: docType,
           studentName: invoice.studentName,
           classDayTime: invoice.classDayTime,
           ratePerClass: invoice.ratePerClass,
@@ -63,7 +66,7 @@ export function InvoiceHistory() {
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `invoice-${invoice.studentName.replace(/\s+/g, "-").toLowerCase()}-${format(new Date(invoice.createdAt), "yyyy-MM-dd")}.pdf`;
+      a.download = `${docType}-${invoice.studentName.replace(/\s+/g, "-").toLowerCase()}-${format(new Date(invoice.createdAt), "yyyy-MM-dd")}.pdf`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
@@ -78,7 +81,7 @@ export function InvoiceHistory() {
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <History className="h-5 w-5 text-primary" />
-          Invoice History
+          Document History
         </CardTitle>
       </CardHeader>
       <CardContent>
@@ -91,8 +94,8 @@ export function InvoiceHistory() {
         ) : !invoices || invoices.length === 0 ? (
           <div className="text-center py-12">
             <FileText className="h-12 w-12 mx-auto text-muted-foreground/50 mb-3" />
-            <p className="text-muted-foreground">No invoices generated yet.</p>
-            <p className="text-sm text-muted-foreground">Create your first invoice from the Create Invoice tab.</p>
+            <p className="text-muted-foreground">No documents generated yet.</p>
+            <p className="text-sm text-muted-foreground">Create your first invoice or receipt from the Create Invoice tab.</p>
           </div>
         ) : (
           <div className="overflow-x-auto">
@@ -100,7 +103,8 @@ export function InvoiceHistory() {
               <TableHeader>
                 <TableRow>
                   <TableHead>Date</TableHead>
-                  <TableHead>Type</TableHead>
+                  <TableHead>Document</TableHead>
+                  <TableHead>Billing</TableHead>
                   <TableHead>Student</TableHead>
                   <TableHead>Details</TableHead>
                   <TableHead>Total</TableHead>
@@ -110,6 +114,7 @@ export function InvoiceHistory() {
               <TableBody>
                 {invoices.map((inv) => {
                   const isMonthly = inv.invoiceType === "monthly";
+                  const isReceipt = inv.documentType === "receipt";
                   const total = isMonthly
                     ? parseFloat(inv.monthlyTotal || "0")
                     : inv.attendanceDates.length * parseFloat(inv.ratePerClass);
@@ -119,7 +124,12 @@ export function InvoiceHistory() {
                         {format(new Date(inv.createdAt), "MMM d, yyyy")}
                       </TableCell>
                       <TableCell>
-                        <Badge variant={isMonthly ? "outline" : "secondary"}>
+                        <Badge variant={isReceipt ? "default" : "outline"} data-testid={`badge-doc-type-${inv.id}`}>
+                          {isReceipt ? "Receipt" : "Invoice"}
+                        </Badge>
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant="secondary">
                           {isMonthly ? "Monthly" : "Attendance"}
                         </Badge>
                       </TableCell>

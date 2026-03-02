@@ -6,6 +6,7 @@ import { z } from "zod";
 export const invoices = pgTable("invoices", {
   id: serial("id").primaryKey(),
   invoiceType: text("invoice_type").notNull().default("attendance"),
+  documentType: text("document_type").notNull().default("invoice"),
   studentName: text("student_name").notNull(),
   classDayTime: text("class_day_time").notNull(),
   ratePerClass: numeric("rate_per_class", { precision: 10, scale: 2 }).notNull(),

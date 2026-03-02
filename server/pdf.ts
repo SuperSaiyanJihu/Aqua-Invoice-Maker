@@ -5,6 +5,7 @@ import fs from "fs";
 
 interface AttendanceInvoiceData {
   invoiceType: "attendance";
+  documentType: "invoice" | "receipt";
   studentName: string;
   classDayTime: string;
   ratePerClass: number;
@@ -14,6 +15,7 @@ interface AttendanceInvoiceData {
 
 interface MonthlyInvoiceData {
   invoiceType: "monthly";
+  documentType: "invoice" | "receipt";
   studentName: string;
   classDayTime: string;
   monthlyMonth: string;
@@ -25,7 +27,7 @@ interface MonthlyInvoiceData {
 
 type InvoiceData = AttendanceInvoiceData | MonthlyInvoiceData;
 
-function renderHeader(doc: PDFKit.PDFDocument, logoPath: string) {
+function renderHeader(doc: PDFKit.PDFDocument, logoPath: string, documentType: "invoice" | "receipt") {
   if (fs.existsSync(logoPath)) {
     doc.image(logoPath, 50, 30, { width: 70 });
   }
@@ -35,8 +37,9 @@ function renderHeader(doc: PDFKit.PDFDocument, logoPath: string) {
   doc.fontSize(9).font("Helvetica").fillColor("#555555");
   doc.text("Colonie, NY", 130, 60, { lineBreak: false });
 
+  const headerLabel = documentType === "receipt" ? "RECEIPT" : "INVOICE";
   doc.fontSize(18).font("Helvetica-Bold").fillColor("#1a5276");
-  doc.text("INVOICE", doc.page.width - 200, 38, { width: 150, align: "right", lineBreak: false });
+  doc.text(headerLabel, doc.page.width - 200, 38, { width: 150, align: "right", lineBreak: false });
 
   doc.fontSize(9).font("Helvetica").fillColor("#666666");
   doc.text(`Date: ${format(new Date(), "MMMM d, yyyy")}`, doc.page.width - 200, 60, { width: 150, align: "right", lineBreak: false });
@@ -109,7 +112,7 @@ export async function generateInvoicePdf(data: InvoiceData): Promise<Buffer> {
     const pageWidth = doc.page.width - 100;
     const logoPath = path.join(process.cwd(), "client", "public", "images", "excel-aquatics-logo.png");
 
-    renderHeader(doc, logoPath);
+    renderHeader(doc, logoPath, data.documentType);
     let y = renderStudentInfo(doc, data, 98);
 
     if (data.invoiceType === "attendance") {

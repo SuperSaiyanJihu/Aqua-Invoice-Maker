@@ -34,8 +34,11 @@ export async function registerRoutes(
     }
   });
 
+  const documentTypeSchema = z.enum(["invoice", "receipt"]).default("invoice");
+
   const attendanceSchema = z.object({
     invoiceType: z.literal("attendance"),
+    documentType: documentTypeSchema,
     studentName: z.string().min(1),
     classDayTime: z.string().min(1),
     ratePerClass: z.string(),
@@ -45,6 +48,7 @@ export async function registerRoutes(
 
   const monthlySchema = z.object({
     invoiceType: z.literal("monthly"),
+    documentType: documentTypeSchema,
     studentName: z.string().min(1),
     classDayTime: z.string().min(1),
     monthlyMonth: z.string().min(1),
@@ -59,10 +63,12 @@ export async function registerRoutes(
   app.post("/api/invoices/generate", async (req, res) => {
     try {
       const data = generateSchema.parse(req.body);
+      const docType = data.documentType || "invoice";
 
       if (data.invoiceType === "attendance") {
         await storage.createInvoice({
           invoiceType: "attendance",
+          documentType: docType,
           studentName: data.studentName,
           classDayTime: data.classDayTime,
           ratePerClass: data.ratePerClass,
@@ -72,6 +78,7 @@ export async function registerRoutes(
 
         const pdfBuffer = await generateInvoicePdf({
           invoiceType: "attendance",
+          documentType: docType,
           studentName: data.studentName,
           classDayTime: data.classDayTime,
           ratePerClass: parseFloat(data.ratePerClass),
@@ -80,11 +87,12 @@ export async function registerRoutes(
         });
 
         res.setHeader("Content-Type", "application/pdf");
-        res.setHeader("Content-Disposition", `attachment; filename="invoice.pdf"`);
+        res.setHeader("Content-Disposition", `attachment; filename="${docType}.pdf"`);
         res.send(pdfBuffer);
       } else {
         await storage.createInvoice({
           invoiceType: "monthly",
+          documentType: docType,
           studentName: data.studentName,
           classDayTime: data.classDayTime,
           ratePerClass: "0",
@@ -98,6 +106,7 @@ export async function registerRoutes(
 
         const pdfBuffer = await generateInvoicePdf({
           invoiceType: "monthly",
+          documentType: docType,
           studentName: data.studentName,
           classDayTime: data.classDayTime,
           monthlyMonth: data.monthlyMonth,
@@ -108,7 +117,7 @@ export async function registerRoutes(
         });
 
         res.setHeader("Content-Type", "application/pdf");
-        res.setHeader("Content-Disposition", `attachment; filename="invoice.pdf"`);
+        res.setHeader("Content-Disposition", `attachment; filename="${docType}.pdf"`);
         res.send(pdfBuffer);
       }
     } catch (err: any) {
