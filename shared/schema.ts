@@ -5,6 +5,7 @@ import { z } from "zod";
 
 export const invoices = pgTable("invoices", {
   id: serial("id").primaryKey(),
+  invoiceNumber: text("invoice_number").notNull().unique(),
   invoiceType: text("invoice_type").notNull().default("attendance"),
   documentType: text("document_type").notNull().default("invoice"),
   studentName: text("student_name").notNull(),

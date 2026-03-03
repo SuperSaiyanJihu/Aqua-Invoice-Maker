@@ -7,11 +7,13 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { History, Download, Trash2, FileText } from "lucide-react";
+import { History, Download, Trash2, FileText, Loader2 } from "lucide-react";
 import { format } from "date-fns";
+import { useState } from "react";
 
 export function InvoiceHistory() {
   const { toast } = useToast();
+  const [downloadingId, setDownloadingId] = useState<number | null>(null);
 
   const { data: invoices, isLoading } = useQuery<Invoice[]>({
     queryKey: ["/api/invoices"],
@@ -30,49 +32,35 @@ export function InvoiceHistory() {
     },
   });
 
-  const handleRedownload = async (invoice: Invoice) => {
+  const handleDownload = async (invoice: Invoice) => {
+    setDownloadingId(invoice.id);
     try {
-      const isMonthly = invoice.invoiceType === "monthly";
-      const docType = invoice.documentType || "invoice";
-      let body: any;
+      // Use the new PDF endpoint that doesn't create duplicates
+      const res = await fetch(`/api/invoices/${invoice.id}/pdf`, {
+        credentials: "include",
+      });
 
-      if (isMonthly) {
-        body = {
-          invoiceType: "monthly",
-          documentType: docType,
-          studentName: invoice.studentName,
-          classDayTime: invoice.classDayTime,
-          monthlyMonth: invoice.monthlyMonth,
-          monthlyYear: invoice.monthlyYear,
-          monthlyDay: invoice.monthlyDay,
-          monthlyTotal: invoice.monthlyTotal,
-          comments: invoice.comments,
-        };
-      } else {
-        body = {
-          invoiceType: "attendance",
-          documentType: docType,
-          studentName: invoice.studentName,
-          classDayTime: invoice.classDayTime,
-          ratePerClass: invoice.ratePerClass,
-          attendanceDates: invoice.attendanceDates,
-          comments: invoice.comments,
-        };
+      if (!res.ok) {
+        const error = await res.json();
+        throw new Error(error.error || "Failed to download document");
       }
-
-      const res = await apiRequest("POST", "/api/invoices/generate", body);
 
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `${docType}-${invoice.studentName.replace(/\s+/g, "-").toLowerCase()}-${format(new Date(invoice.createdAt), "yyyy-MM-dd")}.pdf`;
+      
+      const docType = invoice.documentType || "invoice";
+      a.download = `${docType}-${invoice.invoiceNumber}.pdf`;
+      
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
     } catch (err: any) {
       toast({ title: "Error", description: err.message, variant: "destructive" });
+    } finally {
+      setDownloadingId(null);
     }
   };
 
@@ -103,6 +91,7 @@ export function InvoiceHistory() {
               <TableHeader>
                 <TableRow>
                   <TableHead>Date</TableHead>
+                  <TableHead>Invoice #</TableHead>
                   <TableHead>Document</TableHead>
                   <TableHead>Billing</TableHead>
                   <TableHead>Student</TableHead>
@@ -118,10 +107,15 @@ export function InvoiceHistory() {
                   const total = isMonthly
                     ? parseFloat(inv.monthlyTotal || "0")
                     : inv.attendanceDates.length * parseFloat(inv.ratePerClass);
+                  const isDownloading = downloadingId === inv.id;
+                  
                   return (
                     <TableRow key={inv.id} data-testid={`row-invoice-${inv.id}`}>
                       <TableCell className="text-muted-foreground">
                         {format(new Date(inv.createdAt), "MMM d, yyyy")}
+                      </TableCell>
+                      <TableCell className="font-mono text-xs">
+                        {inv.invoiceNumber}
                       </TableCell>
                       <TableCell>
                         <Badge variant={isReceipt ? "default" : "outline"} data-testid={`badge-doc-type-${inv.id}`}>
@@ -142,8 +136,18 @@ export function InvoiceHistory() {
                       <TableCell className="font-medium">${total.toFixed(2)}</TableCell>
                       <TableCell>
                         <div className="flex items-center gap-1">
-                          <Button size="icon" variant="ghost" onClick={() => handleRedownload(inv)} data-testid={`button-download-invoice-${inv.id}`}>
-                            <Download className="h-4 w-4" />
+                          <Button 
+                            size="icon" 
+                            variant="ghost" 
+                            onClick={() => handleDownload(inv)} 
+                            disabled={isDownloading}
+                            data-testid={`button-download-invoice-${inv.id}`}
+                          >
+                            {isDownloading ? (
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : (
+                              <Download className="h-4 w-4" />
+                            )}
                           </Button>
                           <Button
                             size="icon"

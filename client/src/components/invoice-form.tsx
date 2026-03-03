@@ -234,6 +234,7 @@ export function InvoiceForm() {
                   placeholder="e.g. John Smith"
                   value={studentName}
                   onChange={(e) => setStudentName(e.target.value)}
+                  maxLength={100}
                   data-testid="input-student-name"
                 />
               </div>
@@ -247,6 +248,7 @@ export function InvoiceForm() {
                   placeholder="e.g. Monday 4:00 PM"
                   value={classDayTime}
                   onChange={(e) => setClassDayTime(e.target.value)}
+                  maxLength={100}
                   data-testid="input-class-day-time"
                 />
               </div>
@@ -401,8 +403,10 @@ export function InvoiceForm() {
               value={comments}
               onChange={(e) => setComments(e.target.value)}
               rows={3}
+              maxLength={500}
               data-testid="input-comments"
             />
+            <p className="text-xs text-muted-foreground mt-1">{comments.length}/500 characters</p>
           </CardContent>
         </Card>
       </div>

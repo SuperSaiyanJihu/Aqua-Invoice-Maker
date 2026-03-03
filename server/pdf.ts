@@ -2,10 +2,12 @@ import PDFDocument from "pdfkit";
 import { format, parseISO } from "date-fns";
 import path from "path";
 import fs from "fs";
+import { fileURLToPath } from "url";
 
 interface AttendanceInvoiceData {
   invoiceType: "attendance";
   documentType: "invoice" | "receipt";
+  invoiceNumber: string;
   studentName: string;
   classDayTime: string;
   ratePerClass: number;
@@ -16,6 +18,7 @@ interface AttendanceInvoiceData {
 interface MonthlyInvoiceData {
   invoiceType: "monthly";
   documentType: "invoice" | "receipt";
+  invoiceNumber: string;
   studentName: string;
   classDayTime: string;
   monthlyMonth: string;
@@ -27,7 +30,21 @@ interface MonthlyInvoiceData {
 
 type InvoiceData = AttendanceInvoiceData | MonthlyInvoiceData;
 
-function renderHeader(doc: PDFKit.PDFDocument, logoPath: string, documentType: "invoice" | "receipt") {
+// Sanitize text to prevent PDF issues with special characters
+function sanitizeText(text: string, maxLength: number = 500): string {
+  if (!text) return "";
+  return text
+    .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, "") // Remove control characters
+    .slice(0, maxLength)
+    .trim();
+}
+
+function renderHeader(
+  doc: PDFKit.PDFDocument, 
+  logoPath: string, 
+  documentType: "invoice" | "receipt",
+  invoiceNumber: string
+) {
   if (fs.existsSync(logoPath)) {
     doc.image(logoPath, 50, 30, { width: 70 });
   }
@@ -42,9 +59,10 @@ function renderHeader(doc: PDFKit.PDFDocument, logoPath: string, documentType: "
   doc.text(headerLabel, doc.page.width - 200, 38, { width: 150, align: "right", lineBreak: false });
 
   doc.fontSize(9).font("Helvetica").fillColor("#666666");
-  doc.text(`Date: ${format(new Date(), "MMMM d, yyyy")}`, doc.page.width - 200, 60, { width: 150, align: "right", lineBreak: false });
+  doc.text(`#${invoiceNumber}`, doc.page.width - 200, 58, { width: 150, align: "right", lineBreak: false });
+  doc.text(`Date: ${format(new Date(), "MMMM d, yyyy")}`, doc.page.width - 200, 72, { width: 150, align: "right", lineBreak: false });
 
-  doc.moveTo(50, 85).lineTo(doc.page.width - 50, 85).strokeColor("#1a5276").lineWidth(1.5).stroke();
+  doc.moveTo(50, 92).lineTo(doc.page.width - 50, 92).strokeColor("#1a5276").lineWidth(1.5).stroke();
 }
 
 function renderStudentInfo(doc: PDFKit.PDFDocument, data: InvoiceData, startY: number): number {
@@ -55,9 +73,9 @@ function renderStudentInfo(doc: PDFKit.PDFDocument, data: InvoiceData, startY: n
   y += 15;
 
   doc.fontSize(9).font("Helvetica").fillColor("#333333");
-  doc.text(`Student: ${data.studentName}`, 50, y, { lineBreak: false });
+  doc.text(`Student: ${sanitizeText(data.studentName, 100)}`, 50, y, { lineBreak: false });
   y += 14;
-  doc.text(`Class: ${data.classDayTime}`, 50, y, { lineBreak: false });
+  doc.text(`Class: ${sanitizeText(data.classDayTime, 100)}`, 50, y, { lineBreak: false });
   y += 14;
 
   if (data.invoiceType === "attendance") {
@@ -76,6 +94,8 @@ function renderStudentInfo(doc: PDFKit.PDFDocument, data: InvoiceData, startY: n
 function renderComments(doc: PDFKit.PDFDocument, comments: string | null, y: number, pageWidth: number): number {
   if (!comments) return y;
 
+  const sanitizedComments = sanitizeText(comments, 500);
+
   doc.fontSize(10).font("Helvetica-Bold").fillColor("#333333");
   doc.text("Comments:", 50, y, { lineBreak: false });
   y += 14;
@@ -84,8 +104,8 @@ function renderComments(doc: PDFKit.PDFDocument, comments: string | null, y: num
   y += 6;
 
   doc.fontSize(9).font("Helvetica").fillColor("#555555");
-  doc.text(comments, 50, y, { width: pageWidth, lineBreak: false });
-  y += doc.heightOfString(comments, { width: pageWidth }) + 12;
+  doc.text(sanitizedComments, 50, y, { width: pageWidth, lineBreak: false });
+  y += doc.heightOfString(sanitizedComments, { width: pageWidth }) + 12;
 
   return y;
 }
@@ -112,8 +132,8 @@ export async function generateInvoicePdf(data: InvoiceData): Promise<Buffer> {
     const pageWidth = doc.page.width - 100;
     const logoPath = path.join(process.cwd(), "client", "public", "images", "excel-aquatics-logo.png");
 
-    renderHeader(doc, logoPath, data.documentType);
-    let y = renderStudentInfo(doc, data, 98);
+    renderHeader(doc, logoPath, data.documentType, data.invoiceNumber);
+    let y = renderStudentInfo(doc, data, 105);
 
     if (data.invoiceType === "attendance") {
       const datesByMonth: Record<string, string[]> = {};
