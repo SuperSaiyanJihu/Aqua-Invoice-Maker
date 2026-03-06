@@ -228,7 +228,8 @@ export async function registerRoutes(
         const messages = err.errors.map((e: any) => e.message).join(", ");
         return res.status(400).json({ error: messages });
       }
-      res.status(400).json({ error: err.message });
+      console.error("Invoice generation error:", err);
+      res.status(500).json({ error: err.message });
     }
   });
 
