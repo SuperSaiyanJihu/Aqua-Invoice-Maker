@@ -13,7 +13,6 @@ const allowlist = [
   "nanoid",
   "passport",
   "passport-local",
-  "pdfkit",
   "pg",
   "ws",
   "zod",
