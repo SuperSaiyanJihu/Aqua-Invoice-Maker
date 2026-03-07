@@ -1,6 +1,7 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
+import { requireAuth } from "./auth";
 import { z } from "zod";
 import { generateInvoicePdf } from "./pdf";
 
@@ -48,12 +49,15 @@ export async function registerRoutes(
   app.use("/api/", (req, res, next) => {
     const ip = req.ip || req.socket.remoteAddress || "unknown";
     if (!rateLimit(ip)) {
-      return res.status(429).json({ 
-        error: "Too many requests. Please try again later." 
+      return res.status(429).json({
+        error: "Too many requests. Please try again later."
       });
     }
     next();
   });
+
+  // Protect all invoice routes with authentication
+  app.use("/api/invoices", requireAuth);
 
   app.get("/api/invoices", async (_req, res) => {
     try {
