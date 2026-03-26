@@ -162,7 +162,7 @@ export async function generateInvoicePdf(data: InvoiceData): Promise<Buffer> {
 
       doc.rect(tableLeft, y, pageWidth, 18).fill("#1a5276");
       doc.fontSize(9).font("Helvetica-Bold").fillColor("#ffffff");
-      doc.text("Date", colDate + 8, y + 4, { width: 350, lineBreak: false });
+      doc.text("Attended Date", colDate + 8, y + 4, { width: 350, lineBreak: false });
       doc.text("Amount", colRate + 8, y + 4, { width: 80, align: "right", lineBreak: false });
       y += 18;
 
@@ -231,7 +231,7 @@ export async function generateInvoicePdf(data: InvoiceData): Promise<Buffer> {
 
       doc.rect(tableLeft, y, pageWidth, 18).fill("#1a5276");
       doc.fontSize(9).font("Helvetica-Bold").fillColor("#ffffff");
-      doc.text("Date", colDate + 8, y + 4, { width: 350, lineBreak: false });
+      doc.text("Scheduled Lesson Date", colDate + 8, y + 4, { width: 350, lineBreak: false });
       doc.text("", colValue + 8, y + 4, { width: 80, align: "right", lineBreak: false });
       y += 18;
 
