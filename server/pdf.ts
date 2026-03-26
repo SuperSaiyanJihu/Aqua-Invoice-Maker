@@ -25,6 +25,7 @@ interface MonthlyInvoiceData {
   monthlyYear: string;
   monthlyDay: string;
   monthlyTotal: number;
+  attendanceDates?: string[];
   comments: string | null;
 }
 
@@ -203,7 +204,74 @@ export async function generateInvoicePdf(data: InvoiceData): Promise<Buffer> {
       doc.text(totalLabel, colRate - 112, y + 5, { width: 120, lineBreak: false });
       doc.text(totalAmount, colRate + 8, y + 5, { width: 80, align: "right", lineBreak: false });
       y += 32;
+    } else if (data.attendanceDates && data.attendanceDates.length > 0) {
+      // Monthly with specific lesson dates
+      const datesByMonth: Record<string, string[]> = {};
+      for (const dateStr of data.attendanceDates) {
+        const d = parseISO(dateStr);
+        const monthKey = format(d, "MMMM yyyy");
+        if (!datesByMonth[monthKey]) datesByMonth[monthKey] = [];
+        datesByMonth[monthKey].push(dateStr);
+      }
+
+      for (const [, dates] of Object.entries(datesByMonth)) {
+        dates.sort();
+      }
+
+      const sortedMonths = Object.keys(datesByMonth).sort((a, b) => {
+        const da = parseISO(datesByMonth[a][0]);
+        const db = parseISO(datesByMonth[b][0]);
+        return da.getTime() - db.getTime();
+      });
+
+      const tableLeft = 50;
+      const colDate = tableLeft;
+      const colValue = tableLeft + 380;
+      const tableRight = doc.page.width - 50;
+
+      doc.rect(tableLeft, y, pageWidth, 18).fill("#1a5276");
+      doc.fontSize(9).font("Helvetica-Bold").fillColor("#ffffff");
+      doc.text("Date", colDate + 8, y + 4, { width: 350, lineBreak: false });
+      doc.text("", colValue + 8, y + 4, { width: 80, align: "right", lineBreak: false });
+      y += 18;
+
+      let rowIndex = 0;
+
+      for (const month of sortedMonths) {
+        const dates = datesByMonth[month];
+
+        doc.rect(tableLeft, y, pageWidth, 18).fill("#e8f0f8");
+        doc.fontSize(9).font("Helvetica-Bold").fillColor("#1a5276");
+        doc.text(month, colDate + 8, y + 4, { width: pageWidth - 16, lineBreak: false });
+        y += 18;
+
+        for (const dateStr of dates) {
+          const d = parseISO(dateStr);
+
+          if (rowIndex % 2 === 1) {
+            doc.rect(tableLeft, y, pageWidth, 16).fill("#f8f9fa");
+          }
+
+          doc.fontSize(8).font("Helvetica").fillColor("#333333");
+          doc.text(format(d, "EEEE, MMMM d, yyyy"), colDate + 8, y + 4, { width: 350, lineBreak: false });
+
+          y += 16;
+          rowIndex++;
+        }
+      }
+
+      doc.moveTo(tableLeft, y).lineTo(tableRight, y).strokeColor("#cccccc").lineWidth(0.5).stroke();
+      y += 6;
+
+      const totalDates = data.attendanceDates.length;
+      const totalLabel = `Total (${totalDates} ${totalDates === 1 ? "lesson" : "lessons"}):`;
+      doc.rect(colValue - 120, y, 208, 22).fill("#1a5276");
+      doc.fontSize(10).font("Helvetica-Bold").fillColor("#ffffff");
+      doc.text(totalLabel, colValue - 112, y + 5, { width: 120, lineBreak: false });
+      doc.text(`$${data.monthlyTotal.toFixed(2)}`, colValue + 8, y + 5, { width: 80, align: "right", lineBreak: false });
+      y += 32;
     } else {
+      // Monthly without specific dates (simple table)
       const tableLeft = 50;
       const colLabel = tableLeft;
       const colValue = tableLeft + 380;

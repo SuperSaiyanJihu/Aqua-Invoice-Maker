@@ -10,6 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Calendar } from "@/components/ui/calendar";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
+import { Checkbox } from "@/components/ui/checkbox";
 import { FileDown, X, CalendarDays, DollarSign, User, Clock, CalendarRange, FileText, Receipt } from "lucide-react";
 import { format } from "date-fns";
 
@@ -34,6 +35,8 @@ export function InvoiceForm() {
   const [monthlyYear, setMonthlyYear] = useState(new Date().getFullYear().toString());
   const [monthlyDay, setMonthlyDay] = useState("");
   const [monthlyTotal, setMonthlyTotal] = useState("");
+  const [showMonthlyDates, setShowMonthlyDates] = useState(false);
+  const [monthlySelectedDates, setMonthlySelectedDates] = useState<Date[]>([]);
   const [comments, setComments] = useState("");
   const [isGenerating, setIsGenerating] = useState(false);
 
@@ -114,6 +117,9 @@ export function InvoiceForm() {
         body.monthlyYear = monthlyYear;
         body.monthlyDay = monthlyDay;
         body.monthlyTotal = monthlyTotal;
+        if (monthlySelectedDates.length > 0) {
+          body.attendanceDates = monthlySelectedDates.map((d) => format(d, "yyyy-MM-dd"));
+        }
       }
 
       const res = await apiRequest("POST", "/api/invoices/generate", body);
@@ -149,6 +155,8 @@ export function InvoiceForm() {
     setMonthlyYear(new Date().getFullYear().toString());
     setMonthlyDay("");
     setMonthlyTotal("");
+    setShowMonthlyDates(false);
+    setMonthlySelectedDates([]);
     setComments("");
   };
 
@@ -389,6 +397,68 @@ export function InvoiceForm() {
                   data-testid="input-monthly-total"
                 />
               </div>
+              <Separator />
+              <div className="flex items-center space-x-2">
+                <Checkbox
+                  id="showMonthlyDates"
+                  checked={showMonthlyDates}
+                  onCheckedChange={(checked) => {
+                    setShowMonthlyDates(!!checked);
+                    if (!checked) setMonthlySelectedDates([]);
+                  }}
+                  data-testid="checkbox-show-monthly-dates"
+                />
+                <Label htmlFor="showMonthlyDates" className="text-sm font-normal cursor-pointer">
+                  Include specific lesson dates on the {docLabel.toLowerCase()}
+                </Label>
+              </div>
+
+              {showMonthlyDates && (
+                <div className="space-y-4">
+                  <p className="text-sm text-muted-foreground">
+                    Click on dates the student had lessons. These will appear on the {docLabel.toLowerCase()}.
+                  </p>
+                  <div className="flex justify-center">
+                    <Calendar
+                      mode="multiple"
+                      selected={monthlySelectedDates}
+                      onSelect={(dates) => dates && setMonthlySelectedDates(dates)}
+                      className="rounded-md border"
+                      defaultMonth={monthlyMonth && monthlyYear ? new Date(parseInt(monthlyYear), MONTHS.indexOf(monthlyMonth)) : undefined}
+                      data-testid="calendar-monthly"
+                    />
+                  </div>
+
+                  {monthlySelectedDates.length > 0 && (
+                    <div className="space-y-3">
+                      <Separator />
+                      <div className="flex items-center justify-between flex-wrap gap-2">
+                        <p className="text-sm font-medium">
+                          {monthlySelectedDates.length} date{monthlySelectedDates.length !== 1 ? "s" : ""} selected
+                        </p>
+                        <Button variant="ghost" size="sm" onClick={() => setMonthlySelectedDates([])} data-testid="button-clear-monthly-dates">
+                          Clear all
+                        </Button>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        {monthlySelectedDates
+                          .sort((a, b) => a.getTime() - b.getTime())
+                          .map((d) => (
+                            <Badge key={d.toISOString()} variant="secondary" className="gap-1">
+                              {format(d, "MMM d, yyyy")}
+                              <button
+                                onClick={() => setMonthlySelectedDates((prev) => prev.filter((x) => x.getTime() !== d.getTime()))}
+                                className="ml-1"
+                              >
+                                <X className="h-3 w-3" />
+                              </button>
+                            </Badge>
+                          ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
             </CardContent>
           </Card>
         )}
@@ -466,6 +536,12 @@ export function InvoiceForm() {
                     <span className="text-muted-foreground">Lesson Day</span>
                     <span className="font-medium">{monthlyDay || "—"}</span>
                   </div>
+                  {monthlySelectedDates.length > 0 && (
+                    <div className="flex justify-between flex-wrap gap-2">
+                      <span className="text-muted-foreground">Lesson dates</span>
+                      <span className="font-medium">{monthlySelectedDates.length} selected</span>
+                    </div>
+                  )}
                 </>
               )}
 
