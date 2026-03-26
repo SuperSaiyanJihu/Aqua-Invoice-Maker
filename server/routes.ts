@@ -91,6 +91,7 @@ export async function registerRoutes(
           monthlyYear: invoice.monthlyYear || "",
           monthlyDay: invoice.monthlyDay || "",
           monthlyTotal: parseFloat(invoice.monthlyTotal || "0"),
+          attendanceDates: invoice.attendanceDates,
           comments: invoice.comments,
         });
       } else {
@@ -151,6 +152,7 @@ export async function registerRoutes(
     monthlyYear: z.string().min(1),
     monthlyDay: z.string().min(1),
     monthlyTotal: z.string(),
+    attendanceDates: z.array(z.string()).max(366, "Cannot select more than 366 dates").optional().default([]),
     comments: z.string().max(MAX_COMMENTS_LENGTH, `Comments must be ${MAX_COMMENTS_LENGTH} characters or less`).nullable().optional(),
   });
 
@@ -197,7 +199,7 @@ export async function registerRoutes(
           studentName: data.studentName,
           classDayTime: data.classDayTime,
           ratePerClass: "0",
-          attendanceDates: [],
+          attendanceDates: data.attendanceDates,
           monthlyMonth: data.monthlyMonth,
           monthlyYear: data.monthlyYear,
           monthlyDay: data.monthlyDay,
@@ -215,6 +217,7 @@ export async function registerRoutes(
           monthlyYear: data.monthlyYear,
           monthlyDay: data.monthlyDay,
           monthlyTotal: parseFloat(data.monthlyTotal),
+          attendanceDates: data.attendanceDates,
           comments: data.comments || null,
         });
 

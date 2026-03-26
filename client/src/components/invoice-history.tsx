@@ -130,7 +130,7 @@ export function InvoiceHistory() {
                       <TableCell className="font-medium">{inv.studentName}</TableCell>
                       <TableCell>
                         {isMonthly
-                          ? `${inv.monthlyMonth} ${inv.monthlyYear}`
+                          ? `${inv.monthlyMonth} ${inv.monthlyYear}${inv.attendanceDates.length > 0 ? ` (${inv.attendanceDates.length} dates)` : ""}`
                           : `${inv.attendanceDates.length} classes`}
                       </TableCell>
                       <TableCell className="font-medium">${total.toFixed(2)}</TableCell>
