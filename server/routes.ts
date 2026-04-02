@@ -48,12 +48,149 @@ export async function registerRoutes(
   app.use("/api/", (req, res, next) => {
     const ip = req.ip || req.socket.remoteAddress || "unknown";
     if (!rateLimit(ip)) {
-      return res.status(429).json({ 
-        error: "Too many requests. Please try again later." 
+      return res.status(429).json({
+        error: "Too many requests. Please try again later."
       });
     }
     next();
   });
+
+  // =====================
+  // FAMILY ROUTES
+  // =====================
+
+  const familySchema = z.object({
+    familyName: z.string().min(1).max(MAX_NAME_LENGTH),
+    studentNames: z.string().min(1).max(200),
+    classDayTime: z.string().min(1).max(MAX_CLASS_LENGTH),
+    billingType: z.enum(["attendance", "monthly"]).default("attendance"),
+    ratePerClass: z.string().nullable().optional(),
+    monthlyTotal: z.string().nullable().optional(),
+    emailAddresses: z.array(z.string().email()).default([]),
+    notes: z.string().max(1000).nullable().optional(),
+    reminderFrequency: z.enum(["monthly", "biweekly", "weekly", "none"]).default("none"),
+    reminderDayOfMonth: z.number().int().min(1).max(28).nullable().optional(),
+    reminderDayOfWeek: z.number().int().min(0).max(6).nullable().optional(),
+    reminderAnchorDate: z.string().nullable().optional(),
+    isActive: z.boolean().default(true),
+  });
+
+  app.get("/api/families", async (_req, res) => {
+    try {
+      const result = await storage.getFamilies();
+      res.json(result);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get("/api/families/:id", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      if (isNaN(id)) return res.status(400).json({ error: "Invalid ID" });
+      const family = await storage.getFamily(id);
+      if (!family) return res.status(404).json({ error: "Family not found" });
+      res.json(family);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/families", async (req, res) => {
+    try {
+      const data = familySchema.parse(req.body);
+      const family = await storage.createFamily(data as any);
+      res.status(201).json(family);
+    } catch (err: any) {
+      if (err.name === "ZodError") {
+        const messages = err.errors.map((e: any) => e.message).join(", ");
+        return res.status(400).json({ error: messages });
+      }
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.put("/api/families/:id", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      if (isNaN(id)) return res.status(400).json({ error: "Invalid ID" });
+      const data = familySchema.partial().parse(req.body);
+      const family = await storage.updateFamily(id, data as any);
+      if (!family) return res.status(404).json({ error: "Family not found" });
+      res.json(family);
+    } catch (err: any) {
+      if (err.name === "ZodError") {
+        const messages = err.errors.map((e: any) => e.message).join(", ");
+        return res.status(400).json({ error: messages });
+      }
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.delete("/api/families/:id", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      if (isNaN(id)) return res.status(400).json({ error: "Invalid ID" });
+      const deleted = await storage.deleteFamily(id);
+      if (!deleted) return res.status(404).json({ error: "Family not found" });
+      res.status(204).send();
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // =====================
+  // BILLING PERIOD ROUTES
+  // =====================
+
+  app.get("/api/billing/dashboard", async (_req, res) => {
+    try {
+      await storage.generateUpcomingPeriods();
+      const pending = await storage.getAllPendingPeriods();
+      res.json(pending);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get("/api/families/:id/periods", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      if (isNaN(id)) return res.status(400).json({ error: "Invalid ID" });
+      const periods = await storage.getBillingPeriods(id);
+      res.json(periods);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  const updatePeriodSchema = z.object({
+    invoiceCreated: z.boolean().optional(),
+    invoiceSent: z.boolean().optional(),
+    invoiceId: z.number().int().nullable().optional(),
+    notes: z.string().max(500).nullable().optional(),
+  });
+
+  app.patch("/api/billing/periods/:id", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      if (isNaN(id)) return res.status(400).json({ error: "Invalid ID" });
+      const data = updatePeriodSchema.parse(req.body);
+      const period = await storage.updateBillingPeriod(id, data as any);
+      if (!period) return res.status(404).json({ error: "Billing period not found" });
+      res.json(period);
+    } catch (err: any) {
+      if (err.name === "ZodError") {
+        const messages = err.errors.map((e: any) => e.message).join(", ");
+        return res.status(400).json({ error: messages });
+      }
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // =====================
+  // INVOICE ROUTES
+  // =====================
 
   app.get("/api/invoices", async (_req, res) => {
     try {
@@ -141,6 +278,8 @@ export async function registerRoutes(
     ratePerClass: z.string(),
     attendanceDates: z.array(z.string()).min(1).max(366, "Cannot select more than 366 dates"),
     comments: z.string().max(MAX_COMMENTS_LENGTH, `Comments must be ${MAX_COMMENTS_LENGTH} characters or less`).nullable().optional(),
+    familyId: z.number().int().nullable().optional(),
+    billingPeriodId: z.number().int().nullable().optional(),
   });
 
   const monthlySchema = z.object({
@@ -154,6 +293,8 @@ export async function registerRoutes(
     monthlyTotal: z.string(),
     attendanceDates: z.array(z.string()).max(366, "Cannot select more than 366 dates").optional().default([]),
     comments: z.string().max(MAX_COMMENTS_LENGTH, `Comments must be ${MAX_COMMENTS_LENGTH} characters or less`).nullable().optional(),
+    familyId: z.number().int().nullable().optional(),
+    billingPeriodId: z.number().int().nullable().optional(),
   });
 
   const generateSchema = z.discriminatedUnion("invoiceType", [attendanceSchema, monthlySchema]);
@@ -174,7 +315,16 @@ export async function registerRoutes(
           ratePerClass: data.ratePerClass,
           attendanceDates: data.attendanceDates,
           comments: data.comments || null,
+          familyId: data.familyId || null,
         });
+
+        // Auto-mark billing period as created
+        if (data.billingPeriodId) {
+          await storage.updateBillingPeriod(data.billingPeriodId, {
+            invoiceCreated: true,
+            invoiceId: invoice.id,
+          });
+        }
 
         const pdfBuffer = await generateInvoicePdf({
           invoiceType: "attendance",
@@ -205,7 +355,16 @@ export async function registerRoutes(
           monthlyDay: data.monthlyDay,
           monthlyTotal: data.monthlyTotal,
           comments: data.comments || null,
+          familyId: data.familyId || null,
         });
+
+        // Auto-mark billing period as created
+        if (data.billingPeriodId) {
+          await storage.updateBillingPeriod(data.billingPeriodId, {
+            invoiceCreated: true,
+            invoiceId: invoice.id,
+          });
+        }
 
         const pdfBuffer = await generateInvoicePdf({
           invoiceType: "monthly",
