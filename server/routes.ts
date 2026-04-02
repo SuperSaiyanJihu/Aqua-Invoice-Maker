@@ -1,6 +1,7 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
+import { requireAuth } from "./auth";
 import { z } from "zod";
 import { generateInvoicePdf } from "./pdf";
 
@@ -54,6 +55,11 @@ export async function registerRoutes(
     }
     next();
   });
+
+  // Protect all API routes with authentication
+  app.use("/api/families", requireAuth);
+  app.use("/api/billing", requireAuth);
+  app.use("/api/invoices", requireAuth);
 
   // =====================
   // FAMILY ROUTES

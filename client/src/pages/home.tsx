@@ -4,10 +4,13 @@ import { InvoiceHistory } from "@/components/invoice-history";
 import { FamilyList } from "@/components/family-list";
 import { BillingDashboard } from "@/components/billing-dashboard";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { LayoutDashboard, Users, FileText, History } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { LayoutDashboard, Users, FileText, History, LogOut } from "lucide-react";
+import { useAuth } from "@/hooks/use-auth";
 import logoImg from "@assets/Logo_1772310414809.png";
 
 export default function Home() {
+  const { user, logout, isLoggingOut } = useAuth();
   const [activeTab, setActiveTab] = useState("dashboard");
   const [selectedFamilyId, setSelectedFamilyId] = useState<number | null>(null);
   const [selectedBillingPeriodId, setSelectedBillingPeriodId] = useState<number | null>(null);
@@ -19,7 +22,6 @@ export default function Home() {
   };
 
   const handleFamilyUsed = () => {
-    // Clear after form has consumed the selection
     setSelectedFamilyId(null);
     setSelectedBillingPeriodId(null);
   };
@@ -41,6 +43,20 @@ export default function Home() {
             <p className="text-sm text-muted-foreground">
               Document Management — Colonie, NY
             </p>
+          </div>
+          <div className="ml-auto flex items-center gap-3">
+            <span className="text-sm text-muted-foreground">
+              {user?.username}
+            </span>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => logout()}
+              disabled={isLoggingOut}
+            >
+              <LogOut className="h-4 w-4 mr-1" />
+              {isLoggingOut ? "Signing out..." : "Sign Out"}
+            </Button>
           </div>
         </div>
       </header>
