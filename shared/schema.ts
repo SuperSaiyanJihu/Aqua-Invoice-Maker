@@ -1,7 +1,39 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, varchar, integer, date, numeric, serial, timestamp } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, integer, date, numeric, serial, timestamp, boolean } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
+
+export const families = pgTable("families", {
+  id: serial("id").primaryKey(),
+  familyName: text("family_name").notNull(),
+  studentNames: text("student_names").notNull(),
+  classDayTime: text("class_day_time").notNull(),
+  billingType: text("billing_type").notNull().default("attendance"), // "attendance" | "monthly"
+  ratePerClass: numeric("rate_per_class", { precision: 10, scale: 2 }),
+  monthlyTotal: numeric("monthly_total", { precision: 10, scale: 2 }),
+  emailAddresses: text("email_addresses").array().notNull().default([]),
+  notes: text("notes"),
+  reminderFrequency: text("reminder_frequency").notNull().default("none"), // "monthly" | "biweekly" | "weekly" | "none"
+  reminderDayOfMonth: integer("reminder_day_of_month"), // 1-28 for monthly
+  reminderDayOfWeek: integer("reminder_day_of_week"), // 0=Sun, 1=Mon, ..., 6=Sat
+  reminderAnchorDate: date("reminder_anchor_date"), // reference date for biweekly
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const billingPeriods = pgTable("billing_periods", {
+  id: serial("id").primaryKey(),
+  familyId: integer("family_id").notNull().references(() => families.id, { onDelete: "cascade" }),
+  periodStart: date("period_start").notNull(),
+  periodEnd: date("period_end").notNull(),
+  periodLabel: text("period_label").notNull(),
+  invoiceCreated: boolean("invoice_created").notNull().default(false),
+  invoiceSent: boolean("invoice_sent").notNull().default(false),
+  invoiceId: integer("invoice_id").references(() => invoices.id, { onDelete: "set null" }),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
 
 export const invoices = pgTable("invoices", {
   id: serial("id").primaryKey(),
@@ -17,10 +49,17 @@ export const invoices = pgTable("invoices", {
   monthlyDay: text("monthly_day"),
   monthlyTotal: numeric("monthly_total", { precision: 10, scale: 2 }),
   comments: text("comments"),
+  familyId: integer("family_id").references(() => families.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
+export const insertFamilySchema = createInsertSchema(families).omit({ id: true, createdAt: true, updatedAt: true });
+export const insertBillingPeriodSchema = createInsertSchema(billingPeriods).omit({ id: true, createdAt: true });
 export const insertInvoiceSchema = createInsertSchema(invoices).omit({ id: true, createdAt: true });
 
+export type InsertFamily = z.infer<typeof insertFamilySchema>;
+export type Family = typeof families.$inferSelect;
+export type InsertBillingPeriod = z.infer<typeof insertBillingPeriodSchema>;
+export type BillingPeriod = typeof billingPeriods.$inferSelect;
 export type InsertInvoice = z.infer<typeof insertInvoiceSchema>;
 export type Invoice = typeof invoices.$inferSelect;

@@ -1,6 +1,8 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import type { Family } from "@shared/schema";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -11,7 +13,7 @@ import { Calendar } from "@/components/ui/calendar";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { Checkbox } from "@/components/ui/checkbox";
-import { FileDown, X, CalendarDays, DollarSign, User, Clock, CalendarRange, FileText, Receipt } from "lucide-react";
+import { FileDown, X, CalendarDays, DollarSign, User, Clock, CalendarRange, FileText, Receipt, Users } from "lucide-react";
 import { format } from "date-fns";
 
 const MONTHS = [
@@ -23,7 +25,13 @@ const DAYS_OF_WEEK = [
   "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday",
 ];
 
-export function InvoiceForm() {
+interface InvoiceFormProps {
+  selectedFamilyId?: number | null;
+  selectedBillingPeriodId?: number | null;
+  onFamilyUsed?: () => void;
+}
+
+export function InvoiceForm({ selectedFamilyId, selectedBillingPeriodId, onFamilyUsed }: InvoiceFormProps) {
   const { toast } = useToast();
   const [invoiceType, setInvoiceType] = useState<"attendance" | "monthly">("attendance");
   const [documentType, setDocumentType] = useState<"invoice" | "receipt">("invoice");
@@ -39,6 +47,54 @@ export function InvoiceForm() {
   const [monthlySelectedDates, setMonthlySelectedDates] = useState<Date[]>([]);
   const [comments, setComments] = useState("");
   const [isGenerating, setIsGenerating] = useState(false);
+
+  // Family selection
+  const [familyId, setFamilyId] = useState<number | null>(null);
+  const [billingPeriodId, setBillingPeriodId] = useState<number | null>(null);
+
+  const { data: families } = useQuery<Family[]>({
+    queryKey: ["/api/families"],
+  });
+
+  // Handle external family selection (from Dashboard or Family list)
+  useEffect(() => {
+    if (selectedFamilyId) {
+      setFamilyId(selectedFamilyId);
+      setBillingPeriodId(selectedBillingPeriodId || null);
+      const family = families?.find((f) => f.id === selectedFamilyId);
+      if (family) {
+        prefillFromFamily(family);
+      }
+      onFamilyUsed?.();
+    }
+  }, [selectedFamilyId, selectedBillingPeriodId, families]);
+
+  // Handle dropdown family selection
+  const handleFamilySelect = (value: string) => {
+    if (value === "none") {
+      setFamilyId(null);
+      setBillingPeriodId(null);
+      return;
+    }
+    const id = parseInt(value);
+    setFamilyId(id);
+    setBillingPeriodId(null);
+    const family = families?.find((f) => f.id === id);
+    if (family) {
+      prefillFromFamily(family);
+    }
+  };
+
+  const prefillFromFamily = (family: Family) => {
+    setStudentName(family.studentNames);
+    setClassDayTime(family.classDayTime);
+    setInvoiceType(family.billingType as "attendance" | "monthly");
+    if (family.billingType === "attendance") {
+      setRatePerClass(family.ratePerClass || "");
+    } else {
+      setMonthlyTotal(family.monthlyTotal || "");
+    }
+  };
 
   const datesByMonth = selectedDates.reduce<Record<string, Date[]>>((acc, d) => {
     const key = format(d, "MMMM yyyy");
@@ -107,6 +163,8 @@ export function InvoiceForm() {
         studentName: studentName.trim(),
         classDayTime: classDayTime.trim(),
         comments: comments.trim() || null,
+        familyId: familyId || null,
+        billingPeriodId: billingPeriodId || null,
       };
 
       if (invoiceType === "attendance") {
@@ -135,6 +193,7 @@ export function InvoiceForm() {
       URL.revokeObjectURL(url);
 
       queryClient.invalidateQueries({ queryKey: ["/api/invoices"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/billing/dashboard"] });
 
       const docLabel = documentType === "receipt" ? "Receipt" : "Invoice";
       toast({ title: `${docLabel} generated`, description: `Your PDF ${documentType} has been downloaded.` });
@@ -158,6 +217,8 @@ export function InvoiceForm() {
     setShowMonthlyDates(false);
     setMonthlySelectedDates([]);
     setComments("");
+    setFamilyId(null);
+    setBillingPeriodId(null);
   };
 
   const isFormValid = invoiceType === "attendance"
@@ -169,6 +230,41 @@ export function InvoiceForm() {
   return (
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
       <div className="lg:col-span-2 space-y-6">
+        {/* Family Selector */}
+        {families && families.length > 0 && (
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Users className="h-5 w-5 text-primary" />
+                Select Family
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <Select
+                value={familyId?.toString() || "none"}
+                onValueChange={handleFamilySelect}
+              >
+                <SelectTrigger data-testid="select-family">
+                  <SelectValue placeholder="Choose a family to pre-fill..." />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">— No family (manual entry) —</SelectItem>
+                  {families.map((f) => (
+                    <SelectItem key={f.id} value={f.id.toString()}>
+                      {f.familyName} — {f.studentNames}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {familyId && (
+                <p className="text-xs text-muted-foreground mt-2">
+                  Fields below have been pre-filled from family data. You can still edit them.
+                </p>
+              )}
+            </CardContent>
+          </Card>
+        )}
+
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
