@@ -34,7 +34,7 @@ export interface IStorage {
 
   // Billing Periods
   getBillingPeriods(familyId: number): Promise<BillingPeriod[]>;
-  getAllPendingPeriods(): Promise<(BillingPeriod & { familyName: string; emailAddresses: string[]; billingType: string; ratePerClass: string | null; monthlyTotal: string | null; studentNames: string; classDayTime: string })[]>;
+  getAllPendingPeriods(): Promise<(BillingPeriod & { familyName: string; emailAddresses: string[]; brokerEmails: string[]; billingType: string; ratePerClass: string | null; monthlyTotal: string | null; studentNames: string; classDayTime: string; documentType: string })[]>;
   createBillingPeriod(period: InsertBillingPeriod): Promise<BillingPeriod>;
   updateBillingPeriod(id: number, updates: Partial<InsertBillingPeriod>): Promise<BillingPeriod | undefined>;
   generateUpcomingPeriods(): Promise<void>;
@@ -164,11 +164,13 @@ export class DatabaseStorage implements IStorage {
         createdAt: billingPeriods.createdAt,
         familyName: families.familyName,
         emailAddresses: families.emailAddresses,
+        brokerEmails: families.brokerEmails,
         billingType: families.billingType,
         ratePerClass: families.ratePerClass,
         monthlyTotal: families.monthlyTotal,
         studentNames: families.studentNames,
         classDayTime: families.classDayTime,
+        documentType: families.documentType,
       })
       .from(billingPeriods)
       .innerJoin(families, eq(billingPeriods.familyId, families.id))
@@ -235,12 +237,14 @@ export class DatabaseStorage implements IStorage {
     const periods: { periodStart: string; periodEnd: string; periodLabel: string }[] = [];
 
     if (family.reminderFrequency === "monthly") {
-      // Generate current month and next month periods
-      for (let offset = 0; offset <= 1; offset++) {
+      // Invoices/receipts are due at the conclusion of a month.
+      // e.g. April's document is due starting May 1st.
+      // Generate: previous month (just concluded, now due) and current month (in progress).
+      const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+      for (let offset = -1; offset <= 0; offset++) {
         const d = new Date(today.getFullYear(), today.getMonth() + offset, 1);
         const year = d.getFullYear();
         const month = d.getMonth();
-        const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
         const start = formatDate(new Date(year, month, 1));
         const end = formatDate(new Date(year, month + 1, 0)); // last day of month
         periods.push({

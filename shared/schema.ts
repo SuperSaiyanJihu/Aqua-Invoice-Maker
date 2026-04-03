@@ -18,9 +18,11 @@ export const families = pgTable("families", {
   studentNames: text("student_names").notNull(),
   classDayTime: text("class_day_time").notNull(),
   billingType: text("billing_type").notNull().default("attendance"), // "attendance" | "monthly"
+  documentType: text("document_type").notNull().default("invoice"), // "invoice" | "receipt"
   ratePerClass: numeric("rate_per_class", { precision: 10, scale: 2 }),
   monthlyTotal: numeric("monthly_total", { precision: 10, scale: 2 }),
   emailAddresses: text("email_addresses").array().notNull().default([]),
+  brokerEmails: text("broker_emails").array().notNull().default([]),
   notes: text("notes"),
   reminderFrequency: text("reminder_frequency").notNull().default("none"), // "monthly" | "biweekly" | "weekly" | "none"
   reminderDayOfMonth: integer("reminder_day_of_month"), // 1-28 for monthly

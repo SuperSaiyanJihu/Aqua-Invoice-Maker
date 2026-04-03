@@ -8,7 +8,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Separator } from "@/components/ui/separator";
-import { LayoutDashboard, FileText, Mail, DollarSign, Download, Loader2, Eye, EyeOff } from "lucide-react";
+import { LayoutDashboard, FileText, Receipt, Mail, DollarSign, Download, Loader2, Eye, EyeOff } from "lucide-react";
 
 interface DashboardPeriod {
   id: number;
@@ -28,6 +28,8 @@ interface DashboardPeriod {
   monthlyTotal: string | null;
   studentNames: string;
   classDayTime: string;
+  documentType: string;
+  brokerEmails: string[];
 }
 
 interface BillingDashboardProps {
@@ -90,7 +92,7 @@ export function BillingDashboard({ onCreateInvoice }: BillingDashboardProps) {
       <CardHeader className="flex flex-row items-center justify-between space-y-0 flex-wrap gap-2">
         <CardTitle className="flex items-center gap-2">
           <LayoutDashboard className="h-5 w-5 text-primary" />
-          Invoice Dashboard
+          Billing Dashboard
           {needsAttention > 0 && (
             <Badge variant="destructive" className="ml-2">{needsAttention} to create</Badge>
           )}
@@ -156,6 +158,9 @@ export function BillingDashboard({ onCreateInvoice }: BillingDashboardProps) {
                           <Badge variant="secondary">
                             {period.billingType === "monthly" ? "Monthly" : "Attendance"}
                           </Badge>
+                          <Badge variant={period.documentType === "receipt" ? "outline" : "secondary"}>
+                            {period.documentType === "receipt" ? "Receipt" : "Invoice"}
+                          </Badge>
                         </div>
                         <div className="flex items-center gap-4 text-sm text-muted-foreground flex-wrap">
                           <span className="flex items-center gap-1">
@@ -169,6 +174,12 @@ export function BillingDashboard({ onCreateInvoice }: BillingDashboardProps) {
                             <span className="flex items-center gap-1">
                               <Mail className="h-3.5 w-3.5" />
                               {period.emailAddresses.join(", ")}
+                            </span>
+                          )}
+                          {period.brokerEmails?.length > 0 && (
+                            <span className="flex items-center gap-1">
+                              <Mail className="h-3.5 w-3.5 text-blue-500" />
+                              <span className="text-blue-600 dark:text-blue-400">Broker: {period.brokerEmails.join(", ")}</span>
                             </span>
                           )}
                         </div>
@@ -213,8 +224,12 @@ export function BillingDashboard({ onCreateInvoice }: BillingDashboardProps) {
                               size="sm"
                               onClick={() => onCreateInvoice(period.familyId, period.id)}
                             >
-                              <FileText className="h-4 w-4 mr-2" />
-                              Create Invoice
+                              {period.documentType === "receipt" ? (
+                                <Receipt className="h-4 w-4 mr-2" />
+                              ) : (
+                                <FileText className="h-4 w-4 mr-2" />
+                              )}
+                              Create {period.documentType === "receipt" ? "Receipt" : "Invoice"}
                             </Button>
                           )}
                           {period.invoiceId && (
