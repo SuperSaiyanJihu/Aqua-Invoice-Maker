@@ -89,6 +89,7 @@ export function InvoiceForm({ selectedFamilyId, selectedBillingPeriodId, onFamil
     setStudentName(family.studentNames);
     setClassDayTime(family.classDayTime);
     setInvoiceType(family.billingType as "attendance" | "monthly");
+    setDocumentType((family.documentType as "invoice" | "receipt") || "invoice");
     if (family.billingType === "attendance") {
       setRatePerClass(family.ratePerClass || "");
     } else {

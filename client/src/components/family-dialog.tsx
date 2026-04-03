@@ -11,7 +11,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
-import { CalendarDays, CalendarRange } from "lucide-react";
+import { CalendarDays, CalendarRange, FileText, Receipt } from "lucide-react";
 
 const DAYS_OF_WEEK = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
@@ -29,9 +29,11 @@ export function FamilyDialog({ open, onOpenChange, family }: FamilyDialogProps) 
   const [studentNames, setStudentNames] = useState("");
   const [classDayTime, setClassDayTime] = useState("");
   const [billingType, setBillingType] = useState<"attendance" | "monthly">("attendance");
+  const [documentType, setDocumentType] = useState<"invoice" | "receipt">("invoice");
   const [ratePerClass, setRatePerClass] = useState("");
   const [monthlyTotal, setMonthlyTotal] = useState("");
   const [emailAddresses, setEmailAddresses] = useState("");
+  const [brokerEmails, setBrokerEmails] = useState("");
   const [notes, setNotes] = useState("");
   const [reminderFrequency, setReminderFrequency] = useState<"monthly" | "biweekly" | "weekly" | "none">("none");
   const [reminderDayOfMonth, setReminderDayOfMonth] = useState<string>("1");
@@ -45,9 +47,11 @@ export function FamilyDialog({ open, onOpenChange, family }: FamilyDialogProps) 
       setStudentNames(family.studentNames);
       setClassDayTime(family.classDayTime);
       setBillingType(family.billingType as "attendance" | "monthly");
+      setDocumentType((family.documentType as "invoice" | "receipt") || "invoice");
       setRatePerClass(family.ratePerClass || "");
       setMonthlyTotal(family.monthlyTotal || "");
       setEmailAddresses((family.emailAddresses || []).join(", "));
+      setBrokerEmails((family.brokerEmails || []).join(", "));
       setNotes(family.notes || "");
       setReminderFrequency(family.reminderFrequency as any || "none");
       setReminderDayOfMonth(family.reminderDayOfMonth?.toString() || "1");
@@ -64,9 +68,11 @@ export function FamilyDialog({ open, onOpenChange, family }: FamilyDialogProps) 
     setStudentNames("");
     setClassDayTime("");
     setBillingType("attendance");
+    setDocumentType("invoice");
     setRatePerClass("");
     setMonthlyTotal("");
     setEmailAddresses("");
+    setBrokerEmails("");
     setNotes("");
     setReminderFrequency("none");
     setReminderDayOfMonth("1");
@@ -107,14 +113,21 @@ export function FamilyDialog({ open, onOpenChange, family }: FamilyDialogProps) 
       .map((e) => e.trim())
       .filter((e) => e.length > 0);
 
+    const brokers = brokerEmails
+      .split(",")
+      .map((e) => e.trim())
+      .filter((e) => e.length > 0);
+
     const data: any = {
       familyName: familyName.trim(),
       studentNames: studentNames.trim(),
       classDayTime: classDayTime.trim(),
       billingType,
+      documentType,
       ratePerClass: billingType === "attendance" && ratePerClass ? ratePerClass : null,
       monthlyTotal: billingType === "monthly" && monthlyTotal ? monthlyTotal : null,
       emailAddresses: emails,
+      brokerEmails: brokers,
       notes: notes.trim() || null,
       reminderFrequency,
       reminderDayOfMonth: reminderFrequency === "monthly" ? parseInt(reminderDayOfMonth) : null,
@@ -195,6 +208,31 @@ export function FamilyDialog({ open, onOpenChange, family }: FamilyDialogProps) 
                 Monthly
               </Button>
             </div>
+
+            <Label className="text-sm font-medium">Document Type</Label>
+            <div className="flex gap-3">
+              <Button
+                type="button"
+                variant={documentType === "invoice" ? "default" : "outline"}
+                onClick={() => setDocumentType("invoice")}
+                className="flex-1"
+              >
+                <FileText className="h-4 w-4 mr-2" />
+                Invoice
+              </Button>
+              <Button
+                type="button"
+                variant={documentType === "receipt" ? "default" : "outline"}
+                onClick={() => setDocumentType("receipt")}
+                className="flex-1"
+              >
+                <Receipt className="h-4 w-4 mr-2" />
+                Receipt
+              </Button>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Choose whether this family receives invoices (pay later) or receipts (already paid).
+            </p>
             {billingType === "attendance" ? (
               <div className="space-y-2">
                 <Label htmlFor="ratePerClass">Rate per Class ($)</Label>
@@ -237,6 +275,16 @@ export function FamilyDialog({ open, onOpenChange, family }: FamilyDialogProps) 
                 onChange={(e) => setEmailAddresses(e.target.value)}
               />
               <p className="text-xs text-muted-foreground">Separate multiple emails with commas</p>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="brokerEmails">Broker Email(s)</Label>
+              <Input
+                id="brokerEmails"
+                placeholder="e.g. broker@insurance.com"
+                value={brokerEmails}
+                onChange={(e) => setBrokerEmails(e.target.value)}
+              />
+              <p className="text-xs text-muted-foreground">For direct billing — invoices will also be sent to the broker</p>
             </div>
             <div className="space-y-2">
               <Label htmlFor="notes">Notes</Label>

@@ -123,9 +123,14 @@ export function FamilyList({ onCreateInvoice }: FamilyListProps) {
                       </TableCell>
                       <TableCell>{family.studentNames}</TableCell>
                       <TableCell>
-                        <Badge variant="secondary">
-                          {family.billingType === "monthly" ? "Monthly" : "Attendance"}
-                        </Badge>
+                        <div className="flex flex-col gap-1">
+                          <Badge variant="secondary">
+                            {family.billingType === "monthly" ? "Monthly" : "Attendance"}
+                          </Badge>
+                          <Badge variant="outline" className="text-xs">
+                            {family.documentType === "receipt" ? "Receipt" : "Invoice"}
+                          </Badge>
+                        </div>
                       </TableCell>
                       <TableCell>
                         {family.billingType === "attendance"
@@ -136,11 +141,20 @@ export function FamilyList({ onCreateInvoice }: FamilyListProps) {
                       <TableCell className="text-sm text-muted-foreground">
                         {formatSchedule(family)}
                       </TableCell>
-                      <TableCell className="text-sm max-w-[200px] truncate">
-                        {family.emailAddresses?.length > 0
-                          ? family.emailAddresses.join(", ")
-                          : "—"
-                        }
+                      <TableCell className="text-sm max-w-[200px]">
+                        <div className="space-y-1">
+                          <div className="truncate">
+                            {family.emailAddresses?.length > 0
+                              ? family.emailAddresses.join(", ")
+                              : "—"
+                            }
+                          </div>
+                          {family.brokerEmails?.length > 0 && (
+                            <div className="truncate text-blue-600 dark:text-blue-400 text-xs">
+                              Broker: {family.brokerEmails.join(", ")}
+                            </div>
+                          )}
+                        </div>
                       </TableCell>
                       <TableCell>
                         <div className="flex items-center gap-1">
