@@ -5,7 +5,8 @@ import { FamilyList } from "@/components/family-list";
 import { BillingDashboard } from "@/components/billing-dashboard";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
-import { LayoutDashboard, Users, FileText, History, LogOut } from "lucide-react";
+import { LayoutDashboard, Users, FileText, History, LogOut, ShieldCheck } from "lucide-react";
+import { UserManagement } from "@/components/user-management";
 import { useAuth } from "@/hooks/use-auth";
 import logoImg from "@assets/Logo_1772310414809.png";
 
@@ -80,6 +81,12 @@ export default function Home() {
               <History className="h-4 w-4 mr-2" />
               Document History
             </TabsTrigger>
+            {user?.isAdmin && (
+              <TabsTrigger value="users" data-testid="tab-users">
+                <ShieldCheck className="h-4 w-4 mr-2" />
+                Users
+              </TabsTrigger>
+            )}
           </TabsList>
 
           <TabsContent value="dashboard">
@@ -109,6 +116,12 @@ export default function Home() {
           <TabsContent value="history">
             <InvoiceHistory />
           </TabsContent>
+
+          {user?.isAdmin && (
+            <TabsContent value="users">
+              <UserManagement />
+            </TabsContent>
+          )}
         </Tabs>
       </main>
     </div>

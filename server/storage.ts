@@ -2,11 +2,23 @@ import {
   type Invoice, type InsertInvoice, invoices,
   type Family, type InsertFamily, families,
   type BillingPeriod, type InsertBillingPeriod, billingPeriods,
+  type SelectUser, users,
 } from "@shared/schema";
+import bcrypt from "bcryptjs";
 import { db } from "./db";
 import { eq, desc, or, and, sql } from "drizzle-orm";
 
 export interface IStorage {
+  // Users
+  getUser(username: string): Promise<SelectUser | undefined>;
+  getUserById(id: number): Promise<SelectUser | undefined>;
+  getAllUsers(): Promise<SelectUser[]>;
+  createUser(username: string, passwordHash: string, isAdmin: boolean): Promise<SelectUser>;
+  updateUser(id: number, updates: { username?: string; passwordHash?: string; isAdmin?: boolean }): Promise<SelectUser | undefined>;
+  deleteUser(id: number): Promise<boolean>;
+  getAdminCount(): Promise<number>;
+  ensureAdminUser(): Promise<void>;
+
   // Invoices
   getInvoices(): Promise<Invoice[]>;
   getInvoice(id: number): Promise<Invoice | undefined>;
@@ -29,6 +41,56 @@ export interface IStorage {
 }
 
 export class DatabaseStorage implements IStorage {
+  // --- Users ---
+  async getUser(username: string): Promise<SelectUser | undefined> {
+    const [user] = await db.select().from(users).where(eq(users.username, username));
+    return user;
+  }
+
+  async getUserById(id: number): Promise<SelectUser | undefined> {
+    const [user] = await db.select().from(users).where(eq(users.id, id));
+    return user;
+  }
+
+  async getAllUsers(): Promise<SelectUser[]> {
+    return await db.select().from(users).orderBy(users.username);
+  }
+
+  async createUser(username: string, passwordHash: string, isAdmin: boolean): Promise<SelectUser> {
+    const [created] = await db.insert(users).values({ username, passwordHash, isAdmin }).returning();
+    return created;
+  }
+
+  async updateUser(id: number, updates: { username?: string; passwordHash?: string; isAdmin?: boolean }): Promise<SelectUser | undefined> {
+    const [updated] = await db
+      .update(users)
+      .set({ ...updates, updatedAt: new Date() })
+      .where(eq(users.id, id))
+      .returning();
+    return updated;
+  }
+
+  async deleteUser(id: number): Promise<boolean> {
+    const result = await db.delete(users).where(eq(users.id, id)).returning();
+    return result.length > 0;
+  }
+
+  async getAdminCount(): Promise<number> {
+    const result = await db.select({ count: sql<number>`count(*)` }).from(users).where(eq(users.isAdmin, true));
+    return Number(result[0].count);
+  }
+
+  async ensureAdminUser(): Promise<void> {
+    const allUsers = await db.select().from(users);
+    if (allUsers.length === 0) {
+      const username = process.env.LOGIN_USERNAME || "admin";
+      const password = process.env.LOGIN_PASSWORD || "admin123";
+      const hash = await bcrypt.hash(password, 10);
+      await db.insert(users).values({ username, passwordHash: hash, isAdmin: true });
+      console.log(`Admin user "${username}" created from environment variables`);
+    }
+  }
+
   // --- Invoices ---
   async getInvoices(): Promise<Invoice[]> {
     return await db.select().from(invoices).orderBy(desc(invoices.createdAt));
