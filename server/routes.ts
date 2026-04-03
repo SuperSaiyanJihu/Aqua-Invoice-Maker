@@ -60,6 +60,7 @@ export async function registerRoutes(
   app.use("/api/families", requireAuth);
   app.use("/api/billing", requireAuth);
   app.use("/api/invoices", requireAuth);
+  // Admin routes are protected in auth.ts with both requireAuth + requireAdmin
 
   // =====================
   // FAMILY ROUTES

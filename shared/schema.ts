@@ -3,6 +3,15 @@ import { pgTable, text, varchar, integer, date, numeric, serial, timestamp, bool
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
+export const users = pgTable("users", {
+  id: serial("id").primaryKey(),
+  username: text("username").notNull().unique(),
+  passwordHash: text("password_hash").notNull(),
+  isAdmin: boolean("is_admin").notNull().default(false),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
 export const families = pgTable("families", {
   id: serial("id").primaryKey(),
   familyName: text("family_name").notNull(),
@@ -52,6 +61,12 @@ export const invoices = pgTable("invoices", {
   familyId: integer("family_id").references(() => families.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
+
+export const insertUserSchema = createInsertSchema(users)
+  .omit({ id: true, passwordHash: true, createdAt: true, updatedAt: true })
+  .extend({ password: z.string().min(6, "Password must be at least 6 characters") });
+export type InsertUser = z.infer<typeof insertUserSchema>;
+export type SelectUser = typeof users.$inferSelect;
 
 export const insertFamilySchema = createInsertSchema(families).omit({ id: true, createdAt: true, updatedAt: true });
 export const insertBillingPeriodSchema = createInsertSchema(billingPeriods).omit({ id: true, createdAt: true });
