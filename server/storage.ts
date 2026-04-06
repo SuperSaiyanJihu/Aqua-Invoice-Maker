@@ -237,60 +237,55 @@ export class DatabaseStorage implements IStorage {
     const periods: { periodStart: string; periodEnd: string; periodLabel: string }[] = [];
 
     if (family.reminderFrequency === "monthly") {
-      // Invoices/receipts are due at the conclusion of a month.
-      // e.g. April's document is due starting May 1st.
-      // Generate: previous month (just concluded, now due) and current month (in progress).
+      // Documents are due at the conclusion of a month.
+      // e.g. On April 1st, show reminder for March (the month that just ended).
+      // Only generate the previous month (just concluded, now due).
       const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
-      for (let offset = -1; offset <= 0; offset++) {
-        const d = new Date(today.getFullYear(), today.getMonth() + offset, 1);
-        const year = d.getFullYear();
-        const month = d.getMonth();
-        const start = formatDate(new Date(year, month, 1));
-        const end = formatDate(new Date(year, month + 1, 0)); // last day of month
-        periods.push({
-          periodStart: start,
-          periodEnd: end,
-          periodLabel: `${monthNames[month]} ${year}`,
-        });
-      }
+      const d = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+      const year = d.getFullYear();
+      const month = d.getMonth();
+      const start = formatDate(new Date(year, month, 1));
+      const end = formatDate(new Date(year, month + 1, 0)); // last day of month
+      periods.push({
+        periodStart: start,
+        periodEnd: end,
+        periodLabel: `${monthNames[month]} ${year}`,
+      });
     } else if (family.reminderFrequency === "biweekly") {
-      // Use anchor date to compute biweekly periods
+      // Generate the previous 14-day period (just concluded, now due).
       const anchor = family.reminderAnchorDate ? new Date(family.reminderAnchorDate + "T00:00:00") : new Date(today.getFullYear(), 0, 1);
       const msPerDay = 86400000;
       const daysSinceAnchor = Math.floor((today.getTime() - anchor.getTime()) / msPerDay);
       const periodIndex = Math.floor(daysSinceAnchor / 14);
 
-      for (let offset = 0; offset <= 1; offset++) {
-        const idx = periodIndex + offset;
-        const start = new Date(anchor.getTime() + idx * 14 * msPerDay);
-        const end = new Date(start.getTime() + 13 * msPerDay);
-        const formatShort = (d: Date) => `${d.toLocaleString("en-US", { month: "short" })} ${d.getDate()}`;
-        periods.push({
-          periodStart: formatDate(start),
-          periodEnd: formatDate(end),
-          periodLabel: `${formatShort(start)} - ${formatShort(end)}, ${end.getFullYear()}`,
-        });
-      }
+      const idx = periodIndex - 1; // previous period
+      const start = new Date(anchor.getTime() + idx * 14 * msPerDay);
+      const end = new Date(start.getTime() + 13 * msPerDay);
+      const formatShort = (d: Date) => `${d.toLocaleString("en-US", { month: "short" })} ${d.getDate()}`;
+      periods.push({
+        periodStart: formatDate(start),
+        periodEnd: formatDate(end),
+        periodLabel: `${formatShort(start)} - ${formatShort(end)}, ${end.getFullYear()}`,
+      });
     } else if (family.reminderFrequency === "weekly") {
-      // Current week and next week (week starts on the configured day or Monday)
+      // Generate the previous 7-day period (just concluded, now due).
       const dayOfWeek = family.reminderDayOfWeek ?? 1; // default Monday
       const currentDay = today.getDay();
       const diff = (currentDay - dayOfWeek + 7) % 7;
       const weekStart = new Date(today);
       weekStart.setDate(today.getDate() - diff);
 
-      for (let offset = 0; offset <= 1; offset++) {
-        const start = new Date(weekStart);
-        start.setDate(weekStart.getDate() + offset * 7);
-        const end = new Date(start);
-        end.setDate(start.getDate() + 6);
-        const formatShort = (d: Date) => `${d.toLocaleString("en-US", { month: "short" })} ${d.getDate()}`;
-        periods.push({
-          periodStart: formatDate(start),
-          periodEnd: formatDate(end),
-          periodLabel: `${formatShort(start)} - ${formatShort(end)}, ${end.getFullYear()}`,
-        });
-      }
+      // Previous week
+      const start = new Date(weekStart);
+      start.setDate(weekStart.getDate() - 7);
+      const end = new Date(start);
+      end.setDate(start.getDate() + 6);
+      const formatShort = (d: Date) => `${d.toLocaleString("en-US", { month: "short" })} ${d.getDate()}`;
+      periods.push({
+        periodStart: formatDate(start),
+        periodEnd: formatDate(end),
+        periodLabel: `${formatShort(start)} - ${formatShort(end)}, ${end.getFullYear()}`,
+      });
     }
 
     return periods;
