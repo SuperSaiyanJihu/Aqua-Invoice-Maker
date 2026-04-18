@@ -160,7 +160,7 @@ export class DatabaseStorage implements IStorage {
     return await db
       .select()
       .from(billingPeriods)
-      .where(eq(billingPeriods.familyId, familyId))
+      .where(and(eq(billingPeriods.familyId, familyId), eq(billingPeriods.isDeleted, false)))
       .orderBy(desc(billingPeriods.periodStart));
   }
 
@@ -178,6 +178,8 @@ export class DatabaseStorage implements IStorage {
         notes: billingPeriods.notes,
         isArchived: billingPeriods.isArchived,
         archivedAt: billingPeriods.archivedAt,
+        isDeleted: billingPeriods.isDeleted,
+        deletedAt: billingPeriods.deletedAt,
         createdAt: billingPeriods.createdAt,
         familyName: families.familyName,
         emailAddresses: families.emailAddresses,
@@ -191,7 +193,7 @@ export class DatabaseStorage implements IStorage {
       })
       .from(billingPeriods)
       .innerJoin(families, eq(billingPeriods.familyId, families.id))
-      .where(eq(billingPeriods.isArchived, false))
+      .where(and(eq(billingPeriods.isArchived, false), eq(billingPeriods.isDeleted, false)))
       .orderBy(billingPeriods.periodStart);
   }
 
@@ -209,6 +211,8 @@ export class DatabaseStorage implements IStorage {
         notes: billingPeriods.notes,
         isArchived: billingPeriods.isArchived,
         archivedAt: billingPeriods.archivedAt,
+        isDeleted: billingPeriods.isDeleted,
+        deletedAt: billingPeriods.deletedAt,
         createdAt: billingPeriods.createdAt,
         familyName: families.familyName,
         emailAddresses: families.emailAddresses,
@@ -222,7 +226,7 @@ export class DatabaseStorage implements IStorage {
       })
       .from(billingPeriods)
       .innerJoin(families, eq(billingPeriods.familyId, families.id))
-      .where(eq(billingPeriods.isArchived, true))
+      .where(and(eq(billingPeriods.isArchived, true), eq(billingPeriods.isDeleted, false)))
       .orderBy(desc(billingPeriods.archivedAt));
   }
 
@@ -241,7 +245,13 @@ export class DatabaseStorage implements IStorage {
   }
 
   async deleteBillingPeriod(id: number): Promise<boolean> {
-    const result = await db.delete(billingPeriods).where(eq(billingPeriods.id, id)).returning();
+    // Soft delete — leaves a tombstone so generateUpcomingPeriods won't re-create
+    // the same (familyId, periodStart, periodEnd) tuple.
+    const result = await db
+      .update(billingPeriods)
+      .set({ isDeleted: true, deletedAt: new Date() })
+      .where(eq(billingPeriods.id, id))
+      .returning({ id: billingPeriods.id });
     return result.length > 0;
   }
 
