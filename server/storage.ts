@@ -18,6 +18,7 @@ export interface IStorage {
   deleteUser(id: number): Promise<boolean>;
   getAdminCount(): Promise<number>;
   ensureAdminUser(): Promise<void>;
+  backfillArchivedPeriods(): Promise<void>;
 
   // Invoices
   getInvoices(): Promise<Invoice[]>;
@@ -90,6 +91,18 @@ export class DatabaseStorage implements IStorage {
       const hash = await bcrypt.hash(password, 10);
       await db.insert(users).values({ username, passwordHash: hash, isAdmin: true });
       console.log(`Admin user "${username}" created from environment variables`);
+    }
+  }
+
+  // Idempotent: archive any already-sent period that predates the archive feature.
+  async backfillArchivedPeriods(): Promise<void> {
+    const result = await db
+      .update(billingPeriods)
+      .set({ isArchived: true, archivedAt: new Date() })
+      .where(and(eq(billingPeriods.invoiceSent, true), eq(billingPeriods.isArchived, false)))
+      .returning({ id: billingPeriods.id });
+    if (result.length > 0) {
+      console.log(`Backfilled ${result.length} sent billing period(s) into archive`);
     }
   }
 
