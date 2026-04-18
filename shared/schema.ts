@@ -28,6 +28,7 @@ export const families = pgTable("families", {
   reminderDayOfMonth: integer("reminder_day_of_month"), // 1-28 for monthly
   reminderDayOfWeek: integer("reminder_day_of_week"), // 0=Sun, 1=Mon, ..., 6=Sat
   reminderAnchorDate: date("reminder_anchor_date"), // reference date for biweekly
+  reminderTargetOffset: text("reminder_target_offset").notNull().default("previous"), // "previous" | "current" | "next"
   isActive: boolean("is_active").notNull().default(true),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
@@ -43,6 +44,8 @@ export const billingPeriods = pgTable("billing_periods", {
   invoiceSent: boolean("invoice_sent").notNull().default(false),
   invoiceId: integer("invoice_id").references(() => invoices.id, { onDelete: "set null" }),
   notes: text("notes"),
+  isArchived: boolean("is_archived").notNull().default(false),
+  archivedAt: timestamp("archived_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 

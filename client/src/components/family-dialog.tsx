@@ -12,6 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
 import { CalendarDays, CalendarRange, FileText, Receipt } from "lucide-react";
+import { getOrdinalSuffix } from "@/lib/schedule-format";
 
 const DAYS_OF_WEEK = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
@@ -39,6 +40,7 @@ export function FamilyDialog({ open, onOpenChange, family }: FamilyDialogProps) 
   const [reminderDayOfMonth, setReminderDayOfMonth] = useState<string>("1");
   const [reminderDayOfWeek, setReminderDayOfWeek] = useState<string>("1");
   const [reminderAnchorDate, setReminderAnchorDate] = useState("");
+  const [reminderTargetOffset, setReminderTargetOffset] = useState<"previous" | "current" | "next">("previous");
   const [isActive, setIsActive] = useState(true);
 
   useEffect(() => {
@@ -57,6 +59,7 @@ export function FamilyDialog({ open, onOpenChange, family }: FamilyDialogProps) 
       setReminderDayOfMonth(family.reminderDayOfMonth?.toString() || "1");
       setReminderDayOfWeek(family.reminderDayOfWeek?.toString() || "1");
       setReminderAnchorDate(family.reminderAnchorDate || "");
+      setReminderTargetOffset(((family as any).reminderTargetOffset as "previous" | "current" | "next") || "previous");
       setIsActive(family.isActive);
     } else {
       resetForm();
@@ -78,6 +81,7 @@ export function FamilyDialog({ open, onOpenChange, family }: FamilyDialogProps) 
     setReminderDayOfMonth("1");
     setReminderDayOfWeek("1");
     setReminderAnchorDate("");
+    setReminderTargetOffset("previous");
     setIsActive(true);
   };
 
@@ -133,6 +137,7 @@ export function FamilyDialog({ open, onOpenChange, family }: FamilyDialogProps) 
       reminderDayOfMonth: reminderFrequency === "monthly" ? parseInt(reminderDayOfMonth) : null,
       reminderDayOfWeek: (reminderFrequency === "weekly" || reminderFrequency === "biweekly") ? parseInt(reminderDayOfWeek) : null,
       reminderAnchorDate: reminderFrequency === "biweekly" && reminderAnchorDate ? reminderAnchorDate : null,
+      reminderTargetOffset,
       isActive,
     };
 
@@ -366,6 +371,31 @@ export function FamilyDialog({ open, onOpenChange, family }: FamilyDialogProps) 
                 <p className="text-xs text-muted-foreground">The date the first 2-week billing period starts from</p>
               </div>
             )}
+
+            {reminderFrequency !== "none" && (
+              <div className="space-y-2">
+                <Label htmlFor="reminderTargetOffset">Target Period</Label>
+                <Select value={reminderTargetOffset} onValueChange={(v: any) => setReminderTargetOffset(v)}>
+                  <SelectTrigger id="reminderTargetOffset">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="previous">
+                      {reminderFrequency === "monthly" ? "Previous month" : reminderFrequency === "weekly" ? "Previous week" : "Previous period"}
+                    </SelectItem>
+                    <SelectItem value="current">
+                      {reminderFrequency === "monthly" ? "Current month" : reminderFrequency === "weekly" ? "Current week" : "Current period"}
+                    </SelectItem>
+                    <SelectItem value="next">
+                      {reminderFrequency === "monthly" ? "Next month" : reminderFrequency === "weekly" ? "Next week" : "Next period"}
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">
+                  Which period is the reminder billing for? Reminders only appear on/after the configured day.
+                </p>
+              </div>
+            )}
           </div>
 
           <Separator />
@@ -389,10 +419,4 @@ export function FamilyDialog({ open, onOpenChange, family }: FamilyDialogProps) 
       </DialogContent>
     </Dialog>
   );
-}
-
-function getOrdinalSuffix(n: number): string {
-  const s = ["th", "st", "nd", "rd"];
-  const v = n % 100;
-  return s[(v - 20) % 10] || s[v] || s[0];
 }

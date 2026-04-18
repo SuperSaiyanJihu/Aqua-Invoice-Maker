@@ -10,8 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Users, Plus, Pencil, Trash2, FileText } from "lucide-react";
 import { FamilyDialog } from "./family-dialog";
-
-const DAYS_OF_WEEK = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+import { formatSchedule } from "@/lib/schedule-format";
 
 interface FamilyListProps {
   onCreateInvoice: (familyId: number) => void;
@@ -48,22 +47,6 @@ export function FamilyList({ onCreateInvoice }: FamilyListProps) {
   const handleAdd = () => {
     setEditingFamily(null);
     setDialogOpen(true);
-  };
-
-  const formatSchedule = (family: Family): string => {
-    if (family.reminderFrequency === "none") return "No reminders";
-    if (family.reminderFrequency === "monthly") {
-      const day = family.reminderDayOfMonth || 1;
-      return `Monthly (${day}${getOrdinalSuffix(day)})`;
-    }
-    if (family.reminderFrequency === "biweekly") {
-      return "Every 2 weeks";
-    }
-    if (family.reminderFrequency === "weekly") {
-      const day = DAYS_OF_WEEK[family.reminderDayOfWeek ?? 1];
-      return `Weekly (${day})`;
-    }
-    return family.reminderFrequency;
   };
 
   return (
@@ -201,10 +184,4 @@ export function FamilyList({ onCreateInvoice }: FamilyListProps) {
       />
     </>
   );
-}
-
-function getOrdinalSuffix(n: number): string {
-  const s = ["th", "st", "nd", "rd"];
-  const v = n % 100;
-  return s[(v - 20) % 10] || s[v] || s[0];
 }

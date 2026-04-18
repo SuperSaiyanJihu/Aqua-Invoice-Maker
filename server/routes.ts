@@ -81,6 +81,7 @@ export async function registerRoutes(
     reminderDayOfMonth: z.number().int().min(1).max(28).nullable().optional(),
     reminderDayOfWeek: z.number().int().min(0).max(6).nullable().optional(),
     reminderAnchorDate: z.string().nullable().optional(),
+    reminderTargetOffset: z.enum(["previous", "current", "next"]).default("previous"),
     isActive: z.boolean().default(true),
   });
 
@@ -162,6 +163,15 @@ export async function registerRoutes(
     }
   });
 
+  app.get("/api/billing/archived", async (_req, res) => {
+    try {
+      const archived = await storage.getArchivedPeriods();
+      res.json(archived);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   app.get("/api/families/:id/periods", async (req, res) => {
     try {
       const id = parseInt(req.params.id);
@@ -173,11 +183,17 @@ export async function registerRoutes(
     }
   });
 
+  const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Expected YYYY-MM-DD");
+
   const updatePeriodSchema = z.object({
     invoiceCreated: z.boolean().optional(),
     invoiceSent: z.boolean().optional(),
     invoiceId: z.number().int().nullable().optional(),
     notes: z.string().max(500).nullable().optional(),
+    periodLabel: z.string().min(1).max(100).optional(),
+    periodStart: isoDate.optional(),
+    periodEnd: isoDate.optional(),
+    isArchived: z.boolean().optional(),
   });
 
   app.patch("/api/billing/periods/:id", async (req, res) => {
@@ -185,7 +201,18 @@ export async function registerRoutes(
       const id = parseInt(req.params.id);
       if (isNaN(id)) return res.status(400).json({ error: "Invalid ID" });
       const data = updatePeriodSchema.parse(req.body);
-      const period = await storage.updateBillingPeriod(id, data as any);
+
+      const updates: Record<string, unknown> = { ...data };
+      if (data.invoiceSent === true) {
+        updates.isArchived = true;
+        updates.archivedAt = new Date();
+      } else if (data.isArchived === false) {
+        updates.archivedAt = null;
+      } else if (data.isArchived === true) {
+        updates.archivedAt = new Date();
+      }
+
+      const period = await storage.updateBillingPeriod(id, updates as any);
       if (!period) return res.status(404).json({ error: "Billing period not found" });
       res.json(period);
     } catch (err: any) {
@@ -193,6 +220,18 @@ export async function registerRoutes(
         const messages = err.errors.map((e: any) => e.message).join(", ");
         return res.status(400).json({ error: messages });
       }
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.delete("/api/billing/periods/:id", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      if (isNaN(id)) return res.status(400).json({ error: "Invalid ID" });
+      const deleted = await storage.deleteBillingPeriod(id);
+      if (!deleted) return res.status(404).json({ error: "Billing period not found" });
+      res.status(204).send();
+    } catch (err: any) {
       res.status(500).json({ error: err.message });
     }
   });
