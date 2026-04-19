@@ -6,7 +6,7 @@ import {
 } from "@shared/schema";
 import bcrypt from "bcryptjs";
 import { db } from "./db";
-import { eq, desc, or, and, sql } from "drizzle-orm";
+import { eq, desc, and, sql } from "drizzle-orm";
 
 export interface IStorage {
   // Users
@@ -18,6 +18,7 @@ export interface IStorage {
   deleteUser(id: number): Promise<boolean>;
   getAdminCount(): Promise<number>;
   ensureAdminUser(): Promise<void>;
+  backfillArchivedPeriods(): Promise<void>;
 
   // Invoices
   getInvoices(): Promise<Invoice[]>;
@@ -35,8 +36,10 @@ export interface IStorage {
   // Billing Periods
   getBillingPeriods(familyId: number): Promise<BillingPeriod[]>;
   getAllPendingPeriods(): Promise<(BillingPeriod & { familyName: string; emailAddresses: string[]; brokerEmails: string[]; billingType: string; ratePerClass: string | null; monthlyTotal: string | null; studentNames: string; classDayTime: string; documentType: string })[]>;
+  getArchivedPeriods(): Promise<(BillingPeriod & { familyName: string; emailAddresses: string[]; brokerEmails: string[]; billingType: string; ratePerClass: string | null; monthlyTotal: string | null; studentNames: string; classDayTime: string; documentType: string })[]>;
   createBillingPeriod(period: InsertBillingPeriod): Promise<BillingPeriod>;
-  updateBillingPeriod(id: number, updates: Partial<InsertBillingPeriod>): Promise<BillingPeriod | undefined>;
+  updateBillingPeriod(id: number, updates: Partial<InsertBillingPeriod> & { archivedAt?: Date | null }): Promise<BillingPeriod | undefined>;
+  deleteBillingPeriod(id: number): Promise<boolean>;
   generateUpcomingPeriods(): Promise<void>;
 }
 
@@ -88,6 +91,18 @@ export class DatabaseStorage implements IStorage {
       const hash = await bcrypt.hash(password, 10);
       await db.insert(users).values({ username, passwordHash: hash, isAdmin: true });
       console.log(`Admin user "${username}" created from environment variables`);
+    }
+  }
+
+  // Idempotent: archive any already-sent period that predates the archive feature.
+  async backfillArchivedPeriods(): Promise<void> {
+    const result = await db
+      .update(billingPeriods)
+      .set({ isArchived: true, archivedAt: new Date() })
+      .where(and(eq(billingPeriods.invoiceSent, true), eq(billingPeriods.isArchived, false)))
+      .returning({ id: billingPeriods.id });
+    if (result.length > 0) {
+      console.log(`Backfilled ${result.length} sent billing period(s) into archive`);
     }
   }
 
@@ -145,7 +160,7 @@ export class DatabaseStorage implements IStorage {
     return await db
       .select()
       .from(billingPeriods)
-      .where(eq(billingPeriods.familyId, familyId))
+      .where(and(eq(billingPeriods.familyId, familyId), eq(billingPeriods.isDeleted, false)))
       .orderBy(desc(billingPeriods.periodStart));
   }
 
@@ -161,6 +176,10 @@ export class DatabaseStorage implements IStorage {
         invoiceSent: billingPeriods.invoiceSent,
         invoiceId: billingPeriods.invoiceId,
         notes: billingPeriods.notes,
+        isArchived: billingPeriods.isArchived,
+        archivedAt: billingPeriods.archivedAt,
+        isDeleted: billingPeriods.isDeleted,
+        deletedAt: billingPeriods.deletedAt,
         createdAt: billingPeriods.createdAt,
         familyName: families.familyName,
         emailAddresses: families.emailAddresses,
@@ -174,13 +193,41 @@ export class DatabaseStorage implements IStorage {
       })
       .from(billingPeriods)
       .innerJoin(families, eq(billingPeriods.familyId, families.id))
-      .where(
-        or(
-          eq(billingPeriods.invoiceCreated, false),
-          eq(billingPeriods.invoiceSent, false)
-        )
-      )
+      .where(and(eq(billingPeriods.isArchived, false), eq(billingPeriods.isDeleted, false)))
       .orderBy(billingPeriods.periodStart);
+  }
+
+  async getArchivedPeriods() {
+    return await db
+      .select({
+        id: billingPeriods.id,
+        familyId: billingPeriods.familyId,
+        periodStart: billingPeriods.periodStart,
+        periodEnd: billingPeriods.periodEnd,
+        periodLabel: billingPeriods.periodLabel,
+        invoiceCreated: billingPeriods.invoiceCreated,
+        invoiceSent: billingPeriods.invoiceSent,
+        invoiceId: billingPeriods.invoiceId,
+        notes: billingPeriods.notes,
+        isArchived: billingPeriods.isArchived,
+        archivedAt: billingPeriods.archivedAt,
+        isDeleted: billingPeriods.isDeleted,
+        deletedAt: billingPeriods.deletedAt,
+        createdAt: billingPeriods.createdAt,
+        familyName: families.familyName,
+        emailAddresses: families.emailAddresses,
+        brokerEmails: families.brokerEmails,
+        billingType: families.billingType,
+        ratePerClass: families.ratePerClass,
+        monthlyTotal: families.monthlyTotal,
+        studentNames: families.studentNames,
+        classDayTime: families.classDayTime,
+        documentType: families.documentType,
+      })
+      .from(billingPeriods)
+      .innerJoin(families, eq(billingPeriods.familyId, families.id))
+      .where(and(eq(billingPeriods.isArchived, true), eq(billingPeriods.isDeleted, false)))
+      .orderBy(desc(billingPeriods.archivedAt));
   }
 
   async createBillingPeriod(period: InsertBillingPeriod): Promise<BillingPeriod> {
@@ -188,13 +235,24 @@ export class DatabaseStorage implements IStorage {
     return created;
   }
 
-  async updateBillingPeriod(id: number, updates: Partial<InsertBillingPeriod>): Promise<BillingPeriod | undefined> {
+  async updateBillingPeriod(id: number, updates: Partial<InsertBillingPeriod> & { archivedAt?: Date | null }): Promise<BillingPeriod | undefined> {
     const [updated] = await db
       .update(billingPeriods)
       .set(updates)
       .where(eq(billingPeriods.id, id))
       .returning();
     return updated;
+  }
+
+  async deleteBillingPeriod(id: number): Promise<boolean> {
+    // Soft delete — leaves a tombstone so generateUpcomingPeriods won't re-create
+    // the same (familyId, periodStart, periodEnd) tuple.
+    const result = await db
+      .update(billingPeriods)
+      .set({ isDeleted: true, deletedAt: new Date() })
+      .where(eq(billingPeriods.id, id))
+      .returning({ id: billingPeriods.id });
+    return result.length > 0;
   }
 
   async generateUpcomingPeriods(): Promise<void> {
@@ -234,66 +292,71 @@ export class DatabaseStorage implements IStorage {
   }
 
   private computePeriodsForFamily(family: Family, today: Date): { periodStart: string; periodEnd: string; periodLabel: string }[] {
-    const periods: { periodStart: string; periodEnd: string; periodLabel: string }[] = [];
+    const offsetMap: Record<string, number> = { previous: -1, current: 0, next: 1 };
+    const offset = offsetMap[family.reminderTargetOffset] ?? -1;
 
     if (family.reminderFrequency === "monthly") {
-      // Invoices/receipts are due at the conclusion of a month.
-      // e.g. April's document is due starting May 1st.
-      // Generate: previous month (just concluded, now due) and current month (in progress).
+      const dayOfMonth = family.reminderDayOfMonth ?? 1;
+      // Fire date: the configured day in the current calendar month.
+      const fireDate = new Date(today.getFullYear(), today.getMonth(), dayOfMonth);
+      if (today < fireDate) return [];
+
       const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
-      for (let offset = -1; offset <= 0; offset++) {
-        const d = new Date(today.getFullYear(), today.getMonth() + offset, 1);
-        const year = d.getFullYear();
-        const month = d.getMonth();
-        const start = formatDate(new Date(year, month, 1));
-        const end = formatDate(new Date(year, month + 1, 0)); // last day of month
-        periods.push({
-          periodStart: start,
-          periodEnd: end,
-          periodLabel: `${monthNames[month]} ${year}`,
-        });
-      }
-    } else if (family.reminderFrequency === "biweekly") {
-      // Use anchor date to compute biweekly periods
+      const d = new Date(today.getFullYear(), today.getMonth() + offset, 1);
+      const year = d.getFullYear();
+      const month = d.getMonth();
+      const start = formatDate(new Date(year, month, 1));
+      const end = formatDate(new Date(year, month + 1, 0));
+      return [{
+        periodStart: start,
+        periodEnd: end,
+        periodLabel: `${monthNames[month]} ${year}`,
+      }];
+    }
+
+    if (family.reminderFrequency === "biweekly") {
       const anchor = family.reminderAnchorDate ? new Date(family.reminderAnchorDate + "T00:00:00") : new Date(today.getFullYear(), 0, 1);
       const msPerDay = 86400000;
       const daysSinceAnchor = Math.floor((today.getTime() - anchor.getTime()) / msPerDay);
       const periodIndex = Math.floor(daysSinceAnchor / 14);
+      // Fire date: the start of the current biweekly window.
+      const fireDate = new Date(anchor.getTime() + periodIndex * 14 * msPerDay);
+      if (today < fireDate) return [];
 
-      for (let offset = 0; offset <= 1; offset++) {
-        const idx = periodIndex + offset;
-        const start = new Date(anchor.getTime() + idx * 14 * msPerDay);
-        const end = new Date(start.getTime() + 13 * msPerDay);
-        const formatShort = (d: Date) => `${d.toLocaleString("en-US", { month: "short" })} ${d.getDate()}`;
-        periods.push({
-          periodStart: formatDate(start),
-          periodEnd: formatDate(end),
-          periodLabel: `${formatShort(start)} - ${formatShort(end)}, ${end.getFullYear()}`,
-        });
-      }
-    } else if (family.reminderFrequency === "weekly") {
-      // Current week and next week (week starts on the configured day or Monday)
-      const dayOfWeek = family.reminderDayOfWeek ?? 1; // default Monday
+      const idx = periodIndex + offset;
+      const start = new Date(anchor.getTime() + idx * 14 * msPerDay);
+      const end = new Date(start.getTime() + 13 * msPerDay);
+      const formatShort = (d: Date) => `${d.toLocaleString("en-US", { month: "short" })} ${d.getDate()}`;
+      return [{
+        periodStart: formatDate(start),
+        periodEnd: formatDate(end),
+        periodLabel: `${formatShort(start)} - ${formatShort(end)}, ${end.getFullYear()}`,
+      }];
+    }
+
+    if (family.reminderFrequency === "weekly") {
+      const dayOfWeek = family.reminderDayOfWeek ?? 1;
       const currentDay = today.getDay();
       const diff = (currentDay - dayOfWeek + 7) % 7;
       const weekStart = new Date(today);
       weekStart.setDate(today.getDate() - diff);
+      weekStart.setHours(0, 0, 0, 0);
+      // Fire date: the most recent configured day-of-week (the start of the current week window).
+      if (today < weekStart) return [];
 
-      for (let offset = 0; offset <= 1; offset++) {
-        const start = new Date(weekStart);
-        start.setDate(weekStart.getDate() + offset * 7);
-        const end = new Date(start);
-        end.setDate(start.getDate() + 6);
-        const formatShort = (d: Date) => `${d.toLocaleString("en-US", { month: "short" })} ${d.getDate()}`;
-        periods.push({
-          periodStart: formatDate(start),
-          periodEnd: formatDate(end),
-          periodLabel: `${formatShort(start)} - ${formatShort(end)}, ${end.getFullYear()}`,
-        });
-      }
+      const start = new Date(weekStart);
+      start.setDate(weekStart.getDate() + offset * 7);
+      const end = new Date(start);
+      end.setDate(start.getDate() + 6);
+      const formatShort = (d: Date) => `${d.toLocaleString("en-US", { month: "short" })} ${d.getDate()}`;
+      return [{
+        periodStart: formatDate(start),
+        periodEnd: formatDate(end),
+        periodLabel: `${formatShort(start)} - ${formatShort(end)}, ${end.getFullYear()}`,
+      }];
     }
 
-    return periods;
+    return [];
   }
 }
 

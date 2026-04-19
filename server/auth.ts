@@ -28,6 +28,8 @@ export async function setupAuth(app: Express) {
 
   // Seed admin user on startup
   await storage.ensureAdminUser();
+  // One-shot migration: archive pre-existing sent periods so they don't flood the dashboard.
+  await storage.backfillArchivedPeriods();
 
   // --- Auth endpoints ---
 
