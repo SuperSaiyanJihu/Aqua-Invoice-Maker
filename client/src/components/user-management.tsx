@@ -12,12 +12,13 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
-import { ShieldCheck, Plus, Pencil, Trash2 } from "lucide-react";
+import { ShieldCheck, Plus, Pencil, Trash2, RotateCcw } from "lucide-react";
 
 interface UserData {
   id: number;
   username: string;
   isAdmin: boolean;
+  mustChangePin: boolean;
   createdAt: string;
   updatedAt: string;
 }
@@ -28,10 +29,10 @@ export function UserManagement() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingUser, setEditingUser] = useState<UserData | null>(null);
   const [deleteConfirmId, setDeleteConfirmId] = useState<number | null>(null);
+  const [resetPinConfirmId, setResetPinConfirmId] = useState<number | null>(null);
 
   // Form state
   const [username, setUsername] = useState("");
-  const [password, setPassword] = useState("");
   const [isAdmin, setIsAdmin] = useState(false);
 
   const { data: users, isLoading } = useQuery<UserData[]>({
@@ -39,13 +40,13 @@ export function UserManagement() {
   });
 
   const createMutation = useMutation({
-    mutationFn: async (data: { username: string; password: string; isAdmin: boolean }) => {
+    mutationFn: async (data: { username: string; isAdmin: boolean }) => {
       const res = await apiRequest("POST", "/api/admin/users", data);
       return res.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/admin/users"] });
-      toast({ title: "User created" });
+      toast({ title: "User created", description: "Their PIN is set to 0000 — they'll be prompted to change it on first login." });
       closeDialog();
     },
     onError: (err: Error) => {
@@ -54,7 +55,7 @@ export function UserManagement() {
   });
 
   const updateMutation = useMutation({
-    mutationFn: async ({ id, data }: { id: number; data: { username?: string; password?: string; isAdmin?: boolean } }) => {
+    mutationFn: async ({ id, data }: { id: number; data: { username?: string; isAdmin?: boolean } }) => {
       const res = await apiRequest("PUT", `/api/admin/users/${id}`, data);
       return res.json();
     },
@@ -84,10 +85,25 @@ export function UserManagement() {
     },
   });
 
+  const resetPinMutation = useMutation({
+    mutationFn: async (id: number) => {
+      const res = await apiRequest("POST", `/api/admin/users/${id}/reset-pin`, {});
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/users"] });
+      toast({ title: "PIN reset", description: "User's PIN has been reset to 0000. They'll be prompted to change it on next login." });
+      setResetPinConfirmId(null);
+    },
+    onError: (err: Error) => {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+      setResetPinConfirmId(null);
+    },
+  });
+
   const openAdd = () => {
     setEditingUser(null);
     setUsername("");
-    setPassword("");
     setIsAdmin(false);
     setDialogOpen(true);
   };
@@ -95,7 +111,6 @@ export function UserManagement() {
   const openEdit = (user: UserData) => {
     setEditingUser(user);
     setUsername(user.username);
-    setPassword("");
     setIsAdmin(user.isAdmin);
     setDialogOpen(true);
   };
@@ -104,19 +119,17 @@ export function UserManagement() {
     setDialogOpen(false);
     setEditingUser(null);
     setUsername("");
-    setPassword("");
     setIsAdmin(false);
   };
 
   const handleSubmit = () => {
     if (editingUser) {
-      const data: { username?: string; password?: string; isAdmin?: boolean } = {};
+      const data: { username?: string; isAdmin?: boolean } = {};
       if (username !== editingUser.username) data.username = username;
-      if (password) data.password = password;
       if (isAdmin !== editingUser.isAdmin) data.isAdmin = isAdmin;
       updateMutation.mutate({ id: editingUser.id, data });
     } else {
-      createMutation.mutate({ username, password, isAdmin });
+      createMutation.mutate({ username, isAdmin });
     }
   };
 
@@ -159,6 +172,7 @@ export function UserManagement() {
               <TableRow>
                 <TableHead>Username</TableHead>
                 <TableHead>Role</TableHead>
+                <TableHead>PIN Status</TableHead>
                 <TableHead>Created</TableHead>
                 <TableHead className="text-right">Actions</TableHead>
               </TableRow>
@@ -179,11 +193,27 @@ export function UserManagement() {
                       <Badge variant="secondary">User</Badge>
                     )}
                   </TableCell>
+                  <TableCell>
+                    {u.mustChangePin ? (
+                      <Badge variant="outline" className="text-amber-600 border-amber-300">Pending change</Badge>
+                    ) : (
+                      <Badge variant="outline" className="text-green-600 border-green-300">Set</Badge>
+                    )}
+                  </TableCell>
                   <TableCell className="text-muted-foreground">
                     {new Date(u.createdAt).toLocaleDateString()}
                   </TableCell>
                   <TableCell className="text-right">
                     <div className="flex items-center justify-end gap-1">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        title="Reset PIN to 0000"
+                        onClick={() => setResetPinConfirmId(u.id)}
+                        disabled={u.username === currentUser?.username}
+                      >
+                        <RotateCcw className="h-4 w-4" />
+                      </Button>
                       <Button variant="ghost" size="icon" onClick={() => openEdit(u)}>
                         <Pencil className="h-4 w-4" />
                       </Button>
@@ -201,7 +231,7 @@ export function UserManagement() {
               ))}
               {(!users || users.length === 0) && (
                 <TableRow>
-                  <TableCell colSpan={4} className="text-center text-muted-foreground py-8">
+                  <TableCell colSpan={5} className="text-center text-muted-foreground py-8">
                     No users found
                   </TableCell>
                 </TableRow>
@@ -227,18 +257,11 @@ export function UserManagement() {
                 placeholder="Enter username"
               />
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="password">
-                Password{editingUser ? " (leave blank to keep current)" : ""}
-              </Label>
-              <Input
-                id="password"
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder={editingUser ? "Leave blank to keep current" : "Enter password (min 6 chars)"}
-              />
-            </div>
+            {!editingUser && (
+              <p className="text-sm text-muted-foreground rounded-md bg-muted px-3 py-2">
+                New user will be assigned PIN <strong>0000</strong> and prompted to set a new PIN on first login.
+              </p>
+            )}
             <div className="flex items-center justify-between">
               <Label htmlFor="isAdmin">Admin privileges</Label>
               <Switch
@@ -252,9 +275,30 @@ export function UserManagement() {
             <Button variant="outline" onClick={closeDialog}>Cancel</Button>
             <Button
               onClick={handleSubmit}
-              disabled={isSubmitting || !username || (!editingUser && password.length < 6)}
+              disabled={isSubmitting || !username}
             >
               {isSubmitting ? "Saving..." : editingUser ? "Save Changes" : "Create User"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Reset PIN Confirmation Dialog */}
+      <Dialog open={resetPinConfirmId !== null} onOpenChange={(open) => { if (!open) setResetPinConfirmId(null); }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Reset PIN</DialogTitle>
+          </DialogHeader>
+          <p className="py-4">
+            Reset PIN for <strong>{users?.find(u => u.id === resetPinConfirmId)?.username}</strong> back to <strong>0000</strong>? They will be prompted to set a new PIN on next login.
+          </p>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setResetPinConfirmId(null)}>Cancel</Button>
+            <Button
+              onClick={() => resetPinConfirmId && resetPinMutation.mutate(resetPinConfirmId)}
+              disabled={resetPinMutation.isPending}
+            >
+              {resetPinMutation.isPending ? "Resetting..." : "Reset PIN"}
             </Button>
           </DialogFooter>
         </DialogContent>

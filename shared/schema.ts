@@ -8,6 +8,7 @@ export const users = pgTable("users", {
   username: text("username").notNull().unique(),
   passwordHash: text("password_hash").notNull(),
   isAdmin: boolean("is_admin").notNull().default(false),
+  mustChangePin: boolean("must_change_pin").notNull().default(false),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
@@ -70,8 +71,8 @@ export const invoices = pgTable("invoices", {
 });
 
 export const insertUserSchema = createInsertSchema(users)
-  .omit({ id: true, passwordHash: true, createdAt: true, updatedAt: true })
-  .extend({ password: z.string().min(6, "Password must be at least 6 characters") });
+  .omit({ id: true, passwordHash: true, createdAt: true, updatedAt: true, mustChangePin: true })
+  .extend({ password: z.string().regex(/^\d{4}$/, "PIN must be exactly 4 digits").optional() });
 export type InsertUser = z.infer<typeof insertUserSchema>;
 export type SelectUser = typeof users.$inferSelect;
 

@@ -13,8 +13,8 @@ export interface IStorage {
   getUser(username: string): Promise<SelectUser | undefined>;
   getUserById(id: number): Promise<SelectUser | undefined>;
   getAllUsers(): Promise<SelectUser[]>;
-  createUser(username: string, passwordHash: string, isAdmin: boolean): Promise<SelectUser>;
-  updateUser(id: number, updates: { username?: string; passwordHash?: string; isAdmin?: boolean }): Promise<SelectUser | undefined>;
+  createUser(username: string, passwordHash: string, isAdmin: boolean, mustChangePin?: boolean): Promise<SelectUser>;
+  updateUser(id: number, updates: { username?: string; passwordHash?: string; isAdmin?: boolean; mustChangePin?: boolean }): Promise<SelectUser | undefined>;
   deleteUser(id: number): Promise<boolean>;
   getAdminCount(): Promise<number>;
   ensureAdminUser(): Promise<void>;
@@ -59,8 +59,8 @@ export class DatabaseStorage implements IStorage {
     return await db.select().from(users).orderBy(users.username);
   }
 
-  async createUser(username: string, passwordHash: string, isAdmin: boolean): Promise<SelectUser> {
-    const [created] = await db.insert(users).values({ username, passwordHash, isAdmin }).returning();
+  async createUser(username: string, passwordHash: string, isAdmin: boolean, mustChangePin = false): Promise<SelectUser> {
+    const [created] = await db.insert(users).values({ username, passwordHash, isAdmin, mustChangePin }).returning();
     return created;
   }
 
