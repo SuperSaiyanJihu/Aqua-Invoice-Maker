@@ -7,9 +7,10 @@ import { useAuth } from "@/hooks/use-auth";
 import NotFound from "@/pages/not-found";
 import Home from "@/pages/home";
 import Login from "@/pages/login";
+import { ChangePinModal } from "@/components/change-pin-modal";
 
 function Router() {
-  const { isAuthenticated, isLoading } = useAuth();
+  const { isAuthenticated, isLoading, user } = useAuth();
 
   if (isLoading) {
     return (
@@ -21,6 +22,10 @@ function Router() {
 
   if (!isAuthenticated) {
     return <Login />;
+  }
+
+  if (user?.mustChangePin) {
+    return <ChangePinModal />;
   }
 
   return (

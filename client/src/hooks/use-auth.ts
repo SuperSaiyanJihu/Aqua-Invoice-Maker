@@ -4,6 +4,7 @@ import { apiRequest } from "@/lib/queryClient";
 interface User {
   username: string;
   isAdmin: boolean;
+  mustChangePin: boolean;
 }
 
 interface AuthResponse {

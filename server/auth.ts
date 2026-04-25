@@ -5,6 +5,9 @@ import bcrypt from "bcryptjs";
 import { storage } from "./storage";
 import { z } from "zod";
 
+const DEFAULT_PIN = "0000";
+const pinSchema = z.string().regex(/^\d{4}$/, "PIN must be exactly 4 digits");
+
 export async function setupAuth(app: Express) {
   const MemoryStore = createMemoryStore(session);
 
@@ -37,24 +40,28 @@ export async function setupAuth(app: Express) {
     const { username, password } = req.body;
 
     if (!username || !password) {
-      return res.status(400).json({ message: "Username and password are required" });
+      return res.status(400).json({ message: "Username and PIN are required" });
     }
 
     const user = await storage.getUser(username);
     if (!user) {
-      return res.status(401).json({ message: "Invalid username or password" });
+      return res.status(401).json({ message: "Invalid username or PIN" });
     }
 
     const valid = await bcrypt.compare(password, user.passwordHash);
     if (!valid) {
-      return res.status(401).json({ message: "Invalid username or password" });
+      return res.status(401).json({ message: "Invalid username or PIN" });
     }
 
     req.session.authenticated = true;
     req.session.username = user.username;
     req.session.userId = user.id;
     req.session.isAdmin = user.isAdmin;
-    return res.json({ message: "Login successful", user: { username: user.username, isAdmin: user.isAdmin } });
+    req.session.mustChangePin = user.mustChangePin;
+    return res.json({
+      message: "Login successful",
+      user: { username: user.username, isAdmin: user.isAdmin, mustChangePin: user.mustChangePin },
+    });
   });
 
   app.post("/api/logout", (req: Request, res: Response) => {
@@ -69,9 +76,32 @@ export async function setupAuth(app: Express) {
 
   app.get("/api/user", (req: Request, res: Response) => {
     if (req.session.authenticated) {
-      return res.json({ user: { username: req.session.username, isAdmin: req.session.isAdmin } });
+      return res.json({
+        user: {
+          username: req.session.username,
+          isAdmin: req.session.isAdmin,
+          mustChangePin: req.session.mustChangePin ?? false,
+        },
+      });
     }
     return res.status(401).json({ message: "Not authenticated" });
+  });
+
+  // Any authenticated user can change their own PIN
+  app.post("/api/change-pin", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const { newPin } = z.object({ newPin: pinSchema }).parse(req.body);
+      const hash = await bcrypt.hash(newPin, 10);
+      const user = await storage.updateUser(req.session.userId, { passwordHash: hash, mustChangePin: false });
+      if (!user) return res.status(404).json({ message: "User not found" });
+      req.session.mustChangePin = false;
+      return res.json({ message: "PIN changed successfully" });
+    } catch (err: any) {
+      if (err.name === "ZodError") {
+        return res.status(400).json({ message: err.errors[0].message });
+      }
+      return res.status(500).json({ message: err.message });
+    }
   });
 
   // --- Admin user management routes ---
@@ -80,19 +110,16 @@ export async function setupAuth(app: Express) {
 
   const createUserSchema = z.object({
     username: z.string().min(1).max(50),
-    password: z.string().min(6, "Password must be at least 6 characters"),
     isAdmin: z.boolean().default(false),
   });
 
   const updateUserSchema = z.object({
     username: z.string().min(1).max(50).optional(),
-    password: z.string().min(6, "Password must be at least 6 characters").optional(),
     isAdmin: z.boolean().optional(),
   });
 
   app.get("/api/admin/users", async (_req: Request, res: Response) => {
     const users = await storage.getAllUsers();
-    // Omit passwordHash from response
     const sanitized = users.map(({ passwordHash, ...rest }) => rest);
     res.json(sanitized);
   });
@@ -101,14 +128,13 @@ export async function setupAuth(app: Express) {
     try {
       const data = createUserSchema.parse(req.body);
 
-      // Check if username already exists
       const existing = await storage.getUser(data.username);
       if (existing) {
         return res.status(400).json({ message: "Username already exists" });
       }
 
-      const hash = await bcrypt.hash(data.password, 10);
-      const user = await storage.createUser(data.username, hash, data.isAdmin);
+      const hash = await bcrypt.hash(DEFAULT_PIN, 10);
+      const user = await storage.createUser(data.username, hash, data.isAdmin, true);
       const { passwordHash, ...sanitized } = user;
       res.status(201).json(sanitized);
     } catch (err: any) {
@@ -127,7 +153,6 @@ export async function setupAuth(app: Express) {
 
       const data = updateUserSchema.parse(req.body);
 
-      // Cannot remove admin from the last admin
       if (data.isAdmin === false) {
         const targetUser = await storage.getUserById(id);
         if (targetUser?.isAdmin) {
@@ -138,7 +163,6 @@ export async function setupAuth(app: Express) {
         }
       }
 
-      // Check username uniqueness if changing
       if (data.username) {
         const existing = await storage.getUser(data.username);
         if (existing && existing.id !== id) {
@@ -146,15 +170,13 @@ export async function setupAuth(app: Express) {
         }
       }
 
-      const updates: { username?: string; passwordHash?: string; isAdmin?: boolean } = {};
+      const updates: { username?: string; isAdmin?: boolean } = {};
       if (data.username) updates.username = data.username;
-      if (data.password) updates.passwordHash = await bcrypt.hash(data.password, 10);
       if (data.isAdmin !== undefined) updates.isAdmin = data.isAdmin;
 
       const user = await storage.updateUser(id, updates);
       if (!user) return res.status(404).json({ message: "User not found" });
 
-      // If the admin changed their own username, update session
       if (req.session.userId === id) {
         if (data.username) req.session.username = data.username;
         if (data.isAdmin !== undefined) req.session.isAdmin = data.isAdmin;
@@ -171,16 +193,29 @@ export async function setupAuth(app: Express) {
     }
   });
 
+  // Reset a user's PIN back to 0000 and force change on next login
+  app.post("/api/admin/users/:id/reset-pin", async (req: Request, res: Response) => {
+    const id = parseInt(req.params.id as string);
+    if (isNaN(id)) return res.status(400).json({ message: "Invalid ID" });
+
+    const targetUser = await storage.getUserById(id);
+    if (!targetUser) return res.status(404).json({ message: "User not found" });
+
+    const hash = await bcrypt.hash(DEFAULT_PIN, 10);
+    const user = await storage.updateUser(id, { passwordHash: hash, mustChangePin: true });
+    if (!user) return res.status(404).json({ message: "User not found" });
+
+    res.json({ message: "PIN reset to 0000" });
+  });
+
   app.delete("/api/admin/users/:id", async (req: Request, res: Response) => {
     const id = parseInt(req.params.id as string);
     if (isNaN(id)) return res.status(400).json({ message: "Invalid ID" });
 
-    // Cannot delete yourself
     if (req.session.userId === id) {
       return res.status(400).json({ message: "Cannot delete your own account" });
     }
 
-    // Cannot delete the last admin
     const targetUser = await storage.getUserById(id);
     if (!targetUser) return res.status(404).json({ message: "User not found" });
     if (targetUser.isAdmin) {
@@ -216,5 +251,6 @@ declare module "express-session" {
     username: string;
     userId: number;
     isAdmin: boolean;
+    mustChangePin: boolean;
   }
 }

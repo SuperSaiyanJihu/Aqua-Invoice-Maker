@@ -51,13 +51,14 @@ export default function Login() {
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="password">Password</Label>
+              <Label htmlFor="password">PIN</Label>
               <Input
                 id="password"
                 type="password"
+                inputMode="numeric"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                placeholder="Enter password"
+                placeholder="Enter PIN"
                 required
                 autoComplete="current-password"
               />
