@@ -318,9 +318,6 @@ export class DatabaseStorage implements IStorage {
           const periodYear = d.getFullYear();
           const periodMonth = d.getMonth();
 
-          // Skip periods that predate the family's creation
-          if (new Date(periodYear, periodMonth, 1) < new Date(startYear, startMonth, 1)) continue;
-
           const start = formatDate(new Date(periodYear, periodMonth, 1));
           const end = formatDate(new Date(periodYear, periodMonth + 1, 0));
           results.push({
@@ -354,9 +351,6 @@ export class DatabaseStorage implements IStorage {
         const idx = pi + offset;
         const start = new Date(anchor.getTime() + idx * 14 * msPerDay);
         const end = new Date(start.getTime() + 13 * msPerDay);
-
-        // Skip periods that predate the family's creation
-        if (start < familyCreated) continue;
 
         results.push({
           periodStart: formatDate(start),
@@ -397,9 +391,6 @@ export class DatabaseStorage implements IStorage {
 
         const start = new Date(weekFireDate.getTime() + offset * 7 * msPerDay);
         const end = new Date(start.getTime() + 6 * msPerDay);
-
-        // Skip periods that predate the family's creation
-        if (start < new Date(familyCreated.getFullYear(), familyCreated.getMonth(), familyCreated.getDate())) continue;
 
         results.push({
           periodStart: formatDate(start),
