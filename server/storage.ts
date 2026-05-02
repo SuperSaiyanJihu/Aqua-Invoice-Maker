@@ -294,66 +294,121 @@ export class DatabaseStorage implements IStorage {
   private computePeriodsForFamily(family: Family, today: Date): { periodStart: string; periodEnd: string; periodLabel: string }[] {
     const offsetMap: Record<string, number> = { previous: -1, current: 0, next: 1 };
     const offset = offsetMap[family.reminderTargetOffset] ?? -1;
+    const familyCreated = new Date(family.createdAt);
 
     if (family.reminderFrequency === "monthly") {
       const dayOfMonth = family.reminderDayOfMonth ?? 1;
-      // Fire date: the configured day in the current calendar month.
-      const fireDate = new Date(today.getFullYear(), today.getMonth(), dayOfMonth);
-      if (today < fireDate) return [];
-
       const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
-      const d = new Date(today.getFullYear(), today.getMonth() + offset, 1);
-      const year = d.getFullYear();
-      const month = d.getMonth();
-      const start = formatDate(new Date(year, month, 1));
-      const end = formatDate(new Date(year, month + 1, 0));
-      return [{
-        periodStart: start,
-        periodEnd: end,
-        periodLabel: `${monthNames[month]} ${year}`,
-      }];
+      const results: { periodStart: string; periodEnd: string; periodLabel: string }[] = [];
+
+      // Walk every calendar month from family creation through today and fire
+      // on each month whose trigger day has already passed.
+      const startYear = familyCreated.getFullYear();
+      const startMonth = familyCreated.getMonth();
+
+      for (let y = startYear; y <= today.getFullYear(); y++) {
+        const mStart = y === startYear ? startMonth : 0;
+        const mEnd = y === today.getFullYear() ? today.getMonth() : 11;
+
+        for (let m = mStart; m <= mEnd; m++) {
+          const fireDate = new Date(y, m, dayOfMonth);
+          if (today < fireDate) continue;
+
+          const d = new Date(y, m + offset, 1);
+          const periodYear = d.getFullYear();
+          const periodMonth = d.getMonth();
+
+          // Skip periods that predate the family's creation
+          if (new Date(periodYear, periodMonth, 1) < new Date(startYear, startMonth, 1)) continue;
+
+          const start = formatDate(new Date(periodYear, periodMonth, 1));
+          const end = formatDate(new Date(periodYear, periodMonth + 1, 0));
+          results.push({
+            periodStart: start,
+            periodEnd: end,
+            periodLabel: `${monthNames[periodMonth]} ${periodYear}`,
+          });
+        }
+      }
+
+      return results;
     }
 
     if (family.reminderFrequency === "biweekly") {
-      const anchor = family.reminderAnchorDate ? new Date(family.reminderAnchorDate + "T00:00:00") : new Date(today.getFullYear(), 0, 1);
       const msPerDay = 86400000;
+      const anchor = family.reminderAnchorDate ? new Date(family.reminderAnchorDate + "T00:00:00") : new Date(today.getFullYear(), 0, 1);
       const daysSinceAnchor = Math.floor((today.getTime() - anchor.getTime()) / msPerDay);
-      const periodIndex = Math.floor(daysSinceAnchor / 14);
-      // Fire date: the start of the current biweekly window.
-      const fireDate = new Date(anchor.getTime() + periodIndex * 14 * msPerDay);
-      if (today < fireDate) return [];
+      const currentPeriodIndex = Math.floor(daysSinceAnchor / 14);
 
-      const idx = periodIndex + offset;
-      const start = new Date(anchor.getTime() + idx * 14 * msPerDay);
-      const end = new Date(start.getTime() + 13 * msPerDay);
+      // Earliest period index to generate: whichever 2-week window contains the family's creation date
+      const daysSinceAnchorAtCreation = Math.floor((familyCreated.getTime() - anchor.getTime()) / msPerDay);
+      const firstPeriodIndex = Math.max(0, Math.floor(daysSinceAnchorAtCreation / 14));
+
       const formatShort = (d: Date) => `${d.toLocaleString("en-US", { month: "short" })} ${d.getDate()}`;
-      return [{
-        periodStart: formatDate(start),
-        periodEnd: formatDate(end),
-        periodLabel: `${formatShort(start)} - ${formatShort(end)}, ${end.getFullYear()}`,
-      }];
+      const results: { periodStart: string; periodEnd: string; periodLabel: string }[] = [];
+
+      for (let pi = firstPeriodIndex; pi <= currentPeriodIndex; pi++) {
+        const fireDate = new Date(anchor.getTime() + pi * 14 * msPerDay);
+        if (today < fireDate) continue;
+
+        const idx = pi + offset;
+        const start = new Date(anchor.getTime() + idx * 14 * msPerDay);
+        const end = new Date(start.getTime() + 13 * msPerDay);
+
+        // Skip periods that predate the family's creation
+        if (start < familyCreated) continue;
+
+        results.push({
+          periodStart: formatDate(start),
+          periodEnd: formatDate(end),
+          periodLabel: `${formatShort(start)} - ${formatShort(end)}, ${end.getFullYear()}`,
+        });
+      }
+
+      return results;
     }
 
     if (family.reminderFrequency === "weekly") {
       const dayOfWeek = family.reminderDayOfWeek ?? 1;
-      const currentDay = today.getDay();
-      const diff = (currentDay - dayOfWeek + 7) % 7;
-      const weekStart = new Date(today);
-      weekStart.setDate(today.getDate() - diff);
-      weekStart.setHours(0, 0, 0, 0);
-      // Fire date: the most recent configured day-of-week (the start of the current week window).
-      if (today < weekStart) return [];
+      const msPerDay = 86400000;
 
-      const start = new Date(weekStart);
-      start.setDate(weekStart.getDate() + offset * 7);
-      const end = new Date(start);
-      end.setDate(start.getDate() + 6);
+      // Find the most recent occurrence of dayOfWeek on or before today
+      const currentDay = today.getDay();
+      const diffToCurrentWeekStart = (currentDay - dayOfWeek + 7) % 7;
+      const currentWeekFireDate = new Date(today);
+      currentWeekFireDate.setDate(today.getDate() - diffToCurrentWeekStart);
+      currentWeekFireDate.setHours(0, 0, 0, 0);
+
+      // Find the fire date of the week that contains the family's creation date
+      const creationDay = familyCreated.getDay();
+      const diffToCreationWeekStart = (creationDay - dayOfWeek + 7) % 7;
+      const firstWeekFireDate = new Date(familyCreated);
+      firstWeekFireDate.setDate(familyCreated.getDate() - diffToCreationWeekStart);
+      firstWeekFireDate.setHours(0, 0, 0, 0);
+
       const formatShort = (d: Date) => `${d.toLocaleString("en-US", { month: "short" })} ${d.getDate()}`;
-      return [{
-        periodStart: formatDate(start),
-        periodEnd: formatDate(end),
-        periodLabel: `${formatShort(start)} - ${formatShort(end)}, ${end.getFullYear()}`,
-      }];
+      const results: { periodStart: string; periodEnd: string; periodLabel: string }[] = [];
+
+      const totalWeeks = Math.round((currentWeekFireDate.getTime() - firstWeekFireDate.getTime()) / (7 * msPerDay));
+
+      for (let w = 0; w <= totalWeeks; w++) {
+        const weekFireDate = new Date(firstWeekFireDate.getTime() + w * 7 * msPerDay);
+        if (today < weekFireDate) continue;
+
+        const start = new Date(weekFireDate.getTime() + offset * 7 * msPerDay);
+        const end = new Date(start.getTime() + 6 * msPerDay);
+
+        // Skip periods that predate the family's creation
+        if (start < new Date(familyCreated.getFullYear(), familyCreated.getMonth(), familyCreated.getDate())) continue;
+
+        results.push({
+          periodStart: formatDate(start),
+          periodEnd: formatDate(end),
+          periodLabel: `${formatShort(start)} - ${formatShort(end)}, ${end.getFullYear()}`,
+        });
+      }
+
+      return results;
     }
 
     return [];
