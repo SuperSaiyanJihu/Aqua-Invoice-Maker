@@ -153,6 +153,29 @@ export async function registerRoutes(
   // BILLING PERIOD ROUTES
   // =====================
 
+  app.get("/api/billing/debug", async (_req, res) => {
+    try {
+      const allFamilies = await storage.getFamilies();
+      const summary = allFamilies.map(f => ({
+        id: f.id,
+        name: f.familyName,
+        isActive: f.isActive,
+        reminderFrequency: f.reminderFrequency,
+        reminderDayOfMonth: f.reminderDayOfMonth,
+        reminderTargetOffset: f.reminderTargetOffset,
+        createdAt: f.createdAt,
+      }));
+      const active = summary.filter(f => f.isActive && f.reminderFrequency !== "none");
+      res.json({
+        totalFamilies: summary.length,
+        eligibleForReminders: active.length,
+        families: summary,
+      });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   app.get("/api/billing/dashboard", async (_req, res) => {
     try {
       await storage.generateUpcomingPeriods();
