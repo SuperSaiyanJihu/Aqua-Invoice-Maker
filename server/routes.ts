@@ -58,7 +58,10 @@ export async function registerRoutes(
 
   // Protect all API routes with authentication
   app.use("/api/families", requireAuth);
-  app.use("/api/billing", requireAuth);
+  app.use("/api/billing", (req, res, next) => {
+    if (req.path === "/debug") return next(); // debug endpoint is public
+    requireAuth(req, res, next);
+  });
   app.use("/api/invoices", requireAuth);
   // Admin routes are protected in auth.ts with both requireAuth + requireAdmin
 
