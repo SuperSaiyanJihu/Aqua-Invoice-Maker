@@ -261,15 +261,21 @@ export class DatabaseStorage implements IStorage {
       .from(families)
       .where(and(eq(families.isActive, true), sql`${families.reminderFrequency} != 'none'`));
 
+    console.log(`[reminders] generateUpcomingPeriods: ${allFamilies.length} active familie(s) with reminders`);
     const today = new Date();
 
     for (const family of allFamilies) {
       const periods = this.computePeriodsForFamily(family, today);
+      console.log(`[reminders] ${family.familyName}: computed ${periods.length} period(s) — ${periods.map(p => p.periodLabel).join(", ") || "none"}`);
 
       for (const period of periods) {
-        // Check if period already exists
+        // Check if period already exists (including archived/deleted records)
         const existing = await db
-          .select()
+          .select({
+            id: billingPeriods.id,
+            isArchived: billingPeriods.isArchived,
+            isDeleted: billingPeriods.isDeleted,
+          })
           .from(billingPeriods)
           .where(
             and(
@@ -286,6 +292,11 @@ export class DatabaseStorage implements IStorage {
             periodEnd: period.periodEnd,
             periodLabel: period.periodLabel,
           });
+          console.log(`[reminders]   + inserted ${period.periodLabel}`);
+        } else {
+          const rec = existing[0];
+          const state = rec.isDeleted ? "deleted" : rec.isArchived ? "archived" : "active";
+          console.log(`[reminders]   ~ skipped ${period.periodLabel} (already exists, state: ${state}, id: ${rec.id})`);
         }
       }
     }
