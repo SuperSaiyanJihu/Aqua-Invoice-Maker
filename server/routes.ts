@@ -3,6 +3,9 @@ import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { requireAuth } from "./auth";
 import { z } from "zod";
+import { db } from "./db";
+import { billingPeriods } from "@shared/schema";
+import { eq } from "drizzle-orm";
 import { generateInvoicePdf } from "./pdf";
 
 // Simple in-memory rate limiter
@@ -159,20 +162,37 @@ export async function registerRoutes(
   app.get("/api/billing/debug", async (_req, res) => {
     try {
       const allFamilies = await storage.getFamilies();
-      const summary = allFamilies.map(f => ({
-        id: f.id,
-        name: f.familyName,
-        isActive: f.isActive,
-        reminderFrequency: f.reminderFrequency,
-        reminderDayOfMonth: f.reminderDayOfMonth,
-        reminderTargetOffset: f.reminderTargetOffset,
-        createdAt: f.createdAt,
-      }));
-      const active = summary.filter(f => f.isActive && f.reminderFrequency !== "none");
+      const today = new Date();
+      const report = await Promise.all(
+        allFamilies.map(async (f) => {
+          const wouldGenerate = (storage as any).computePeriodsForFamily(f, today) as { periodStart: string; periodEnd: string; periodLabel: string }[];
+          const existingPeriods = await storage.getBillingPeriods(f.id);
+          return {
+            id: f.id,
+            name: f.familyName,
+            isActive: f.isActive,
+            reminderFrequency: f.reminderFrequency,
+            reminderDayOfMonth: f.reminderDayOfMonth,
+            reminderTargetOffset: f.reminderTargetOffset,
+            createdAt: f.createdAt,
+            wouldGeneratePeriods: wouldGenerate.map(p => p.periodLabel),
+            existingPeriods: (await db.select().from(billingPeriods).where(eq(billingPeriods.familyId, f.id))).map(p => ({
+              label: p.periodLabel,
+              start: p.periodStart,
+              end: p.periodEnd,
+              invoiceCreated: p.invoiceCreated,
+              invoiceSent: p.invoiceSent,
+              isArchived: p.isArchived,
+              isDeleted: p.isDeleted,
+            })),
+          };
+        })
+      );
       res.json({
-        totalFamilies: summary.length,
-        eligibleForReminders: active.length,
-        families: summary,
+        serverTime: today.toISOString(),
+        totalFamilies: allFamilies.length,
+        eligibleForReminders: allFamilies.filter(f => f.isActive && f.reminderFrequency !== "none").length,
+        families: report,
       });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
