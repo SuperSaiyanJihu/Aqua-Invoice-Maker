@@ -269,7 +269,6 @@ export class DatabaseStorage implements IStorage {
       console.log(`[reminders] ${family.familyName}: computed ${periods.length} period(s) — ${periods.map(p => p.periodLabel).join(", ") || "none"}`);
 
       for (const period of periods) {
-        // Check if period already exists (including archived/deleted records)
         const existing = await db
           .select({
             id: billingPeriods.id,
@@ -295,8 +294,18 @@ export class DatabaseStorage implements IStorage {
           console.log(`[reminders]   + inserted ${period.periodLabel}`);
         } else {
           const rec = existing[0];
-          const state = rec.isDeleted ? "deleted" : rec.isArchived ? "archived" : "active";
-          console.log(`[reminders]   ~ skipped ${period.periodLabel} (already exists, state: ${state}, id: ${rec.id})`);
+          if (rec.isDeleted) {
+            // Restore soft-deleted periods — the scheduler always wins over manual deletion.
+            // Archiving (via mark-as-sent) is the correct way to permanently dismiss a period.
+            await db
+              .update(billingPeriods)
+              .set({ isDeleted: false, deletedAt: null })
+              .where(eq(billingPeriods.id, rec.id));
+            console.log(`[reminders]   ↩ restored ${period.periodLabel} (was soft-deleted, id: ${rec.id})`);
+          } else {
+            const state = rec.isArchived ? "archived" : "active";
+            console.log(`[reminders]   ~ skipped ${period.periodLabel} (state: ${state}, id: ${rec.id})`);
+          }
         }
       }
     }
