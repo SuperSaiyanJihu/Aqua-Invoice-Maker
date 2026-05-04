@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { FileText, Receipt } from "lucide-react";
 
 export interface ReminderEditTarget {
   id: number;
@@ -14,6 +15,7 @@ export interface ReminderEditTarget {
   periodStart: string;
   periodEnd: string;
   notes: string | null;
+  documentType: string;
 }
 
 interface ReminderEditDialogProps {
@@ -28,6 +30,7 @@ export function ReminderEditDialog({ open, onOpenChange, period }: ReminderEditD
   const [periodStart, setPeriodStart] = useState("");
   const [periodEnd, setPeriodEnd] = useState("");
   const [notes, setNotes] = useState("");
+  const [documentType, setDocumentType] = useState<"invoice" | "receipt">("invoice");
 
   useEffect(() => {
     if (period) {
@@ -35,6 +38,7 @@ export function ReminderEditDialog({ open, onOpenChange, period }: ReminderEditD
       setPeriodStart(period.periodStart);
       setPeriodEnd(period.periodEnd);
       setNotes(period.notes || "");
+      setDocumentType((period.documentType as "invoice" | "receipt") || "invoice");
     }
   }, [period, open]);
 
@@ -46,6 +50,7 @@ export function ReminderEditDialog({ open, onOpenChange, period }: ReminderEditD
         periodStart,
         periodEnd,
         notes: notes.trim() || null,
+        documentType,
       });
       return res.json();
     },
@@ -79,6 +84,29 @@ export function ReminderEditDialog({ open, onOpenChange, period }: ReminderEditD
           <DialogTitle>Edit Reminder</DialogTitle>
         </DialogHeader>
         <div className="space-y-4 py-4">
+          <div className="space-y-2">
+            <Label>Document Type</Label>
+            <div className="flex gap-3">
+              <Button
+                type="button"
+                variant={documentType === "invoice" ? "default" : "outline"}
+                className="flex-1"
+                onClick={() => setDocumentType("invoice")}
+              >
+                <FileText className="w-4 h-4 mr-2" />
+                Invoice
+              </Button>
+              <Button
+                type="button"
+                variant={documentType === "receipt" ? "default" : "outline"}
+                className="flex-1"
+                onClick={() => setDocumentType("receipt")}
+              >
+                <Receipt className="w-4 h-4 mr-2" />
+                Receipt
+              </Button>
+            </div>
+          </div>
           <div className="space-y-2">
             <Label htmlFor="periodLabel">Label</Label>
             <Input

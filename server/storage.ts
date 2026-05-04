@@ -189,7 +189,7 @@ export class DatabaseStorage implements IStorage {
         monthlyTotal: families.monthlyTotal,
         studentNames: families.studentNames,
         classDayTime: families.classDayTime,
-        documentType: families.documentType,
+        documentType: billingPeriods.documentType,
       })
       .from(billingPeriods)
       .innerJoin(families, eq(billingPeriods.familyId, families.id))
@@ -222,7 +222,7 @@ export class DatabaseStorage implements IStorage {
         monthlyTotal: families.monthlyTotal,
         studentNames: families.studentNames,
         classDayTime: families.classDayTime,
-        documentType: families.documentType,
+        documentType: billingPeriods.documentType,
       })
       .from(billingPeriods)
       .innerJoin(families, eq(billingPeriods.familyId, families.id))
@@ -290,6 +290,7 @@ export class DatabaseStorage implements IStorage {
             periodStart: period.periodStart,
             periodEnd: period.periodEnd,
             periodLabel: period.periodLabel,
+            documentType: family.documentType,
           });
           console.log(`[reminders]   + inserted ${period.periodLabel}`);
         } else {

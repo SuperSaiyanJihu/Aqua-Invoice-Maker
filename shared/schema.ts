@@ -41,6 +41,7 @@ export const billingPeriods = pgTable("billing_periods", {
   periodStart: date("period_start").notNull(),
   periodEnd: date("period_end").notNull(),
   periodLabel: text("period_label").notNull(),
+  documentType: text("document_type").notNull().default("invoice"),
   invoiceCreated: boolean("invoice_created").notNull().default(false),
   invoiceSent: boolean("invoice_sent").notNull().default(false),
   invoiceId: integer("invoice_id").references(() => invoices.id, { onDelete: "set null" }),

@@ -240,6 +240,7 @@ export async function registerRoutes(
     periodStart: isoDate.optional(),
     periodEnd: isoDate.optional(),
     isArchived: z.boolean().optional(),
+    documentType: z.enum(["invoice", "receipt"]).optional(),
   });
 
   app.patch("/api/billing/periods/:id", async (req, res) => {

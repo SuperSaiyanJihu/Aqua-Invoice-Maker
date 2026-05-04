@@ -146,6 +146,7 @@ export function BillingDashboard({ onCreateInvoice }: BillingDashboardProps) {
       periodStart: p.periodStart,
       periodEnd: p.periodEnd,
       notes: p.notes,
+      documentType: p.documentType,
     });
     setEditOpen(true);
   };
