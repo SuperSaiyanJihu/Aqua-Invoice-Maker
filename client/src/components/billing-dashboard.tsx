@@ -364,7 +364,9 @@ export function BillingDashboard({ onCreateInvoice }: BillingDashboardProps) {
           <AlertDialogHeader>
             <AlertDialogTitle>Delete reminder?</AlertDialogTitle>
             <AlertDialogDescription>
-              This permanently removes this reminder. The family's recurring schedule may re-create a similar reminder on the next fire date.
+              {tab === "archived"
+                ? "This permanently removes this archived reminder."
+                : "Active reminders are re-created automatically by the family's recurring schedule. To dismiss a reminder for good, mark it as sent (which archives it) and delete it from the Archived tab."}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

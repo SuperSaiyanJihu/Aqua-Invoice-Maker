@@ -56,12 +56,13 @@ export function InvoiceForm({ selectedFamilyId, selectedBillingPeriodId, onFamil
     queryKey: ["/api/families"],
   });
 
-  // Handle external family selection (from Dashboard or Family list)
+  // Handle external family selection (from Dashboard or Family list).
+  // Wait for the families query so the prefill isn't skipped on first visit.
   useEffect(() => {
-    if (selectedFamilyId) {
+    if (selectedFamilyId && families) {
       setFamilyId(selectedFamilyId);
       setBillingPeriodId(selectedBillingPeriodId || null);
-      const family = families?.find((f) => f.id === selectedFamilyId);
+      const family = families.find((f) => f.id === selectedFamilyId);
       if (family) {
         prefillFromFamily(family);
       }

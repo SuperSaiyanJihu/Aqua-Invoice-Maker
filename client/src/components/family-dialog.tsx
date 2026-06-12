@@ -112,6 +112,11 @@ export function FamilyDialog({ open, onOpenChange, family }: FamilyDialogProps) 
       return;
     }
 
+    if (reminderFrequency === "biweekly" && !reminderAnchorDate) {
+      toast({ title: "Missing information", description: "Please set the billing start date for the 2-week reminder schedule.", variant: "destructive" });
+      return;
+    }
+
     const emails = emailAddresses
       .split(",")
       .map((e) => e.trim())
@@ -135,7 +140,7 @@ export function FamilyDialog({ open, onOpenChange, family }: FamilyDialogProps) 
       notes: notes.trim() || null,
       reminderFrequency,
       reminderDayOfMonth: reminderFrequency === "monthly" ? parseInt(reminderDayOfMonth) : null,
-      reminderDayOfWeek: (reminderFrequency === "weekly" || reminderFrequency === "biweekly") ? parseInt(reminderDayOfWeek) : null,
+      reminderDayOfWeek: reminderFrequency === "weekly" ? parseInt(reminderDayOfWeek) : null,
       reminderAnchorDate: reminderFrequency === "biweekly" && reminderAnchorDate ? reminderAnchorDate : null,
       reminderTargetOffset,
       isActive,
@@ -343,7 +348,7 @@ export function FamilyDialog({ open, onOpenChange, family }: FamilyDialogProps) 
               </div>
             )}
 
-            {(reminderFrequency === "weekly" || reminderFrequency === "biweekly") && (
+            {reminderFrequency === "weekly" && (
               <div className="space-y-2">
                 <Label>Day of Week</Label>
                 <Select value={reminderDayOfWeek} onValueChange={setReminderDayOfWeek}>

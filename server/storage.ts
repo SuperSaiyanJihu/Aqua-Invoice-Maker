@@ -64,7 +64,7 @@ export class DatabaseStorage implements IStorage {
     return created;
   }
 
-  async updateUser(id: number, updates: { username?: string; passwordHash?: string; isAdmin?: boolean }): Promise<SelectUser | undefined> {
+  async updateUser(id: number, updates: { username?: string; passwordHash?: string; isAdmin?: boolean; mustChangePin?: boolean }): Promise<SelectUser | undefined> {
     const [updated] = await db
       .update(users)
       .set({ ...updates, updatedAt: new Date() })
@@ -268,46 +268,64 @@ export class DatabaseStorage implements IStorage {
       const periods = this.computePeriodsForFamily(family, today);
       console.log(`[reminders] ${family.familyName}: computed ${periods.length} period(s) — ${periods.map(p => p.periodLabel).join(", ") || "none"}`);
 
-      for (const period of periods) {
-        const existing = await db
-          .select({
-            id: billingPeriods.id,
-            isArchived: billingPeriods.isArchived,
-            isDeleted: billingPeriods.isDeleted,
-          })
-          .from(billingPeriods)
-          .where(
-            and(
-              eq(billingPeriods.familyId, family.id),
-              eq(billingPeriods.periodStart, period.periodStart),
-              eq(billingPeriods.periodEnd, period.periodEnd)
-            )
-          );
+      const existingPeriods = await db
+        .select({
+          id: billingPeriods.id,
+          periodStart: billingPeriods.periodStart,
+          periodEnd: billingPeriods.periodEnd,
+          isArchived: billingPeriods.isArchived,
+          isDeleted: billingPeriods.isDeleted,
+        })
+        .from(billingPeriods)
+        .where(eq(billingPeriods.familyId, family.id));
 
-        if (existing.length === 0) {
-          await db.insert(billingPeriods).values({
-            familyId: family.id,
-            periodStart: period.periodStart,
-            periodEnd: period.periodEnd,
-            periodLabel: period.periodLabel,
-            documentType: family.documentType,
-          });
-          console.log(`[reminders]   + inserted ${period.periodLabel}`);
-        } else {
-          const rec = existing[0];
-          if (rec.isDeleted) {
-            // Restore soft-deleted periods — the scheduler always wins over manual deletion.
-            // Archiving (via mark-as-sent) is the correct way to permanently dismiss a period.
+      for (const period of periods) {
+        const exact = existingPeriods.find(
+          (p) => p.periodStart === period.periodStart && p.periodEnd === period.periodEnd
+        );
+
+        if (exact) {
+          if (exact.isDeleted && !exact.isArchived) {
+            // Restore soft-deleted active periods — the scheduler always wins over manual deletion.
+            // Deleting from the archive (after mark-as-sent) is the way to permanently dismiss a period.
             await db
               .update(billingPeriods)
               .set({ isDeleted: false, deletedAt: null })
-              .where(eq(billingPeriods.id, rec.id));
-            console.log(`[reminders]   ↩ restored ${period.periodLabel} (was soft-deleted, id: ${rec.id})`);
+              .where(eq(billingPeriods.id, exact.id));
+            exact.isDeleted = false;
+            console.log(`[reminders]   ↩ restored ${period.periodLabel} (was soft-deleted, id: ${exact.id})`);
           } else {
-            const state = rec.isArchived ? "archived" : "active";
-            console.log(`[reminders]   ~ skipped ${period.periodLabel} (state: ${state}, id: ${rec.id})`);
+            const state = exact.isDeleted ? "deleted from archive" : exact.isArchived ? "archived" : "active";
+            console.log(`[reminders]   ~ skipped ${period.periodLabel} (state: ${state}, id: ${exact.id})`);
           }
+          continue;
         }
+
+        // A manually edited period keeps covering the date range it overlaps,
+        // so don't re-create the canonical period next to it.
+        const overlapping = existingPeriods.find(
+          (p) => !p.isDeleted && p.periodStart <= period.periodEnd && p.periodEnd >= period.periodStart
+        );
+        if (overlapping) {
+          console.log(`[reminders]   ~ skipped ${period.periodLabel} (overlaps edited period, id: ${overlapping.id})`);
+          continue;
+        }
+
+        const [inserted] = await db.insert(billingPeriods).values({
+          familyId: family.id,
+          periodStart: period.periodStart,
+          periodEnd: period.periodEnd,
+          periodLabel: period.periodLabel,
+          documentType: family.documentType,
+        }).returning({
+          id: billingPeriods.id,
+          periodStart: billingPeriods.periodStart,
+          periodEnd: billingPeriods.periodEnd,
+          isArchived: billingPeriods.isArchived,
+          isDeleted: billingPeriods.isDeleted,
+        });
+        existingPeriods.push(inserted);
+        console.log(`[reminders]   + inserted ${period.periodLabel}`);
       }
     }
   }
@@ -366,12 +384,12 @@ export class DatabaseStorage implements IStorage {
       const results: { periodStart: string; periodEnd: string; periodLabel: string }[] = [];
 
       for (let pi = firstPeriodIndex; pi <= currentPeriodIndex; pi++) {
-        const fireDate = new Date(anchor.getTime() + pi * 14 * msPerDay);
+        const fireDate = addDays(anchor, pi * 14);
         if (today < fireDate) continue;
 
         const idx = pi + offset;
-        const start = new Date(anchor.getTime() + idx * 14 * msPerDay);
-        const end = new Date(start.getTime() + 13 * msPerDay);
+        const start = addDays(anchor, idx * 14);
+        const end = addDays(start, 13);
 
         results.push({
           periodStart: formatDate(start),
@@ -407,11 +425,11 @@ export class DatabaseStorage implements IStorage {
       const totalWeeks = Math.round((currentWeekFireDate.getTime() - firstWeekFireDate.getTime()) / (7 * msPerDay));
 
       for (let w = 0; w <= totalWeeks; w++) {
-        const weekFireDate = new Date(firstWeekFireDate.getTime() + w * 7 * msPerDay);
+        const weekFireDate = addDays(firstWeekFireDate, w * 7);
         if (today < weekFireDate) continue;
 
-        const start = new Date(weekFireDate.getTime() + offset * 7 * msPerDay);
-        const end = new Date(start.getTime() + 6 * msPerDay);
+        const start = addDays(weekFireDate, offset * 7);
+        const end = addDays(start, 6);
 
         results.push({
           periodStart: formatDate(start),
@@ -427,8 +445,19 @@ export class DatabaseStorage implements IStorage {
   }
 }
 
+// Format using local date components — toISOString() would shift the date in
+// timezones ahead of UTC since periods are computed with local-time constructors.
 function formatDate(d: Date): string {
-  return d.toISOString().slice(0, 10);
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${d.getFullYear()}-${m}-${day}`;
+}
+
+// Calendar-day arithmetic — millisecond math drifts across DST transitions.
+function addDays(d: Date, n: number): Date {
+  const result = new Date(d);
+  result.setDate(result.getDate() + n);
+  return result;
 }
 
 export const storage = new DatabaseStorage();
