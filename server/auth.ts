@@ -91,6 +91,9 @@ export async function setupAuth(app: Express) {
   app.post("/api/change-pin", requireAuth, async (req: Request, res: Response) => {
     try {
       const { newPin } = z.object({ newPin: pinSchema }).parse(req.body);
+      if (req.session.userId === undefined) {
+        return res.status(401).json({ message: "Authentication required" });
+      }
       const hash = await bcrypt.hash(newPin, 10);
       const user = await storage.updateUser(req.session.userId, { passwordHash: hash, mustChangePin: false });
       if (!user) return res.status(404).json({ message: "User not found" });
