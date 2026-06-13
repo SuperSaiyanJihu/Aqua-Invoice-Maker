@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import type { Family } from "@shared/schema";
+import { validateStudentNames } from "@shared/validation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -120,8 +121,9 @@ export function InvoiceForm({ selectedFamilyId, selectedBillingPeriodId, onFamil
   };
 
   const handleGenerate = async () => {
-    if (!studentName.trim()) {
-      toast({ title: "Missing information", description: "Please enter a student name.", variant: "destructive" });
+    const studentNameError = validateStudentNames(studentName);
+    if (studentNameError) {
+      toast({ title: "Missing information", description: studentNameError, variant: "destructive" });
       return;
     }
     if (!classDayTime.trim()) {
@@ -337,12 +339,13 @@ export function InvoiceForm({ selectedFamilyId, selectedBillingPeriodId, onFamil
                 <Label htmlFor="studentName">Student Full Name</Label>
                 <Input
                   id="studentName"
-                  placeholder="e.g. John Smith"
+                  placeholder="First and last name, e.g. John Smith"
                   value={studentName}
                   onChange={(e) => setStudentName(e.target.value)}
                   maxLength={100}
                   data-testid="input-student-name"
                 />
+                <p className="text-xs text-muted-foreground">First and last name required.</p>
               </div>
               <div className="space-y-2">
                 <Label htmlFor="classDayTime">

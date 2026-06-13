@@ -8,7 +8,18 @@ import { billingPeriods } from "@shared/schema";
 import { eq } from "drizzle-orm";
 import { generateInvoicePdf } from "./pdf";
 import { sendInvoiceEmail, isEmailConfigured } from "./email";
+import { validateStudentNames } from "@shared/validation";
 import type { Invoice } from "@shared/schema";
+
+// Zod helper: a student name field that requires a first and last name.
+const fullStudentName = (max: number, label: string) =>
+  z
+    .string()
+    .min(1)
+    .max(max, label)
+    .refine((v) => validateStudentNames(v) === null, {
+      message: "Please enter both a first and last name for each student.",
+    });
 
 // Generate the PDF buffer for a stored invoice record.
 async function buildPdfForInvoice(invoice: Invoice): Promise<Buffer> {
@@ -103,7 +114,7 @@ export async function registerRoutes(
 
   const familySchema = z.object({
     familyName: z.string().min(1).max(MAX_NAME_LENGTH),
-    studentNames: z.string().min(1).max(200),
+    studentNames: fullStudentName(200, "Student names must be 200 characters or less"),
     classDayTime: z.string().min(1).max(MAX_CLASS_LENGTH),
     billingType: z.enum(["attendance", "monthly"]).default("attendance"),
     documentType: z.enum(["invoice", "receipt"]).default("invoice"),
@@ -488,7 +499,7 @@ export async function registerRoutes(
   const attendanceSchema = z.object({
     invoiceType: z.literal("attendance"),
     documentType: documentTypeSchema,
-    studentName: z.string().min(1).max(MAX_NAME_LENGTH, `Student name must be ${MAX_NAME_LENGTH} characters or less`),
+    studentName: fullStudentName(MAX_NAME_LENGTH, `Student name must be ${MAX_NAME_LENGTH} characters or less`),
     classDayTime: z.string().min(1).max(MAX_CLASS_LENGTH, `Class info must be ${MAX_CLASS_LENGTH} characters or less`),
     ratePerClass: z.string(),
     attendanceDates: z.array(z.string()).min(1).max(366, "Cannot select more than 366 dates"),
@@ -500,7 +511,7 @@ export async function registerRoutes(
   const monthlySchema = z.object({
     invoiceType: z.literal("monthly"),
     documentType: documentTypeSchema,
-    studentName: z.string().min(1).max(MAX_NAME_LENGTH, `Student name must be ${MAX_NAME_LENGTH} characters or less`),
+    studentName: fullStudentName(MAX_NAME_LENGTH, `Student name must be ${MAX_NAME_LENGTH} characters or less`),
     classDayTime: z.string().min(1).max(MAX_CLASS_LENGTH, `Class info must be ${MAX_CLASS_LENGTH} characters or less`),
     monthlyMonth: z.string().min(1),
     monthlyYear: z.string().min(1),
