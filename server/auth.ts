@@ -1,29 +1,35 @@
 import type { Express, Request, Response, NextFunction } from "express";
 import session from "express-session";
-import createMemoryStore from "memorystore";
+import connectPgSimple from "connect-pg-simple";
 import bcrypt from "bcryptjs";
 import { storage } from "./storage";
+import { pool } from "./db";
 import { z } from "zod";
 
 const DEFAULT_PIN = "0000";
 const pinSchema = z.string().regex(/^\d{4}$/, "PIN must be exactly 4 digits");
 
 export async function setupAuth(app: Express) {
-  const MemoryStore = createMemoryStore(session);
+  const isProduction = process.env.NODE_ENV === "production";
+
+  // Persist sessions in Postgres so logins survive server restarts/redeploys.
+  // The `session` table is created automatically if it doesn't exist.
+  const PgStore = connectPgSimple(session);
 
   const sessionSettings: session.SessionOptions = {
     secret: process.env.SESSION_SECRET || "aqua-invoice-maker-secret-key",
     resave: false,
     saveUninitialized: false,
-    store: new MemoryStore({ checkPeriod: 86400000 }),
+    store: new PgStore({ pool, createTableIfMissing: true }),
     cookie: {
       maxAge: 24 * 60 * 60 * 1000, // 24 hours
       httpOnly: true,
       sameSite: "lax",
+      secure: isProduction,
     },
   };
 
-  if (process.env.NODE_ENV === "production") {
+  if (isProduction) {
     app.set("trust proxy", 1);
   }
 
