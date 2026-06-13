@@ -1,23 +1,31 @@
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
-import type { Invoice } from "@shared/schema";
+import type { Invoice, Family } from "@shared/schema";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { History, Download, Trash2, FileText, Loader2 } from "lucide-react";
+import { History, Download, Trash2, FileText, Loader2, Send } from "lucide-react";
 import { format } from "date-fns";
 import { useState } from "react";
+import { SendInvoiceDialog } from "./send-invoice-dialog";
 
 export function InvoiceHistory() {
   const { toast } = useToast();
   const [downloadingId, setDownloadingId] = useState<number | null>(null);
+  const [sendTarget, setSendTarget] = useState<Invoice | null>(null);
 
   const { data: invoices, isLoading } = useQuery<Invoice[]>({
     queryKey: ["/api/invoices"],
   });
+
+  const { data: families } = useQuery<Family[]>({
+    queryKey: ["/api/families"],
+  });
+
+  const familyById = new Map((families || []).map((f) => [f.id, f]));
 
   const deleteMutation = useMutation({
     mutationFn: async (id: number) => {
@@ -64,7 +72,10 @@ export function InvoiceHistory() {
     }
   };
 
+  const sendFamily = sendTarget?.familyId ? familyById.get(sendTarget.familyId) : undefined;
+
   return (
+    <>
     <Card>
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
@@ -97,7 +108,7 @@ export function InvoiceHistory() {
                   <TableHead>Student</TableHead>
                   <TableHead>Details</TableHead>
                   <TableHead>Total</TableHead>
-                  <TableHead className="w-[100px]">Actions</TableHead>
+                  <TableHead className="w-[140px]">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -152,6 +163,15 @@ export function InvoiceHistory() {
                           <Button
                             size="icon"
                             variant="ghost"
+                            onClick={() => setSendTarget(inv)}
+                            title="Send by email"
+                            data-testid={`button-send-invoice-${inv.id}`}
+                          >
+                            <Send className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            size="icon"
+                            variant="ghost"
                             onClick={() => deleteMutation.mutate(inv.id)}
                             disabled={deleteMutation.isPending}
                             data-testid={`button-delete-invoice-${inv.id}`}
@@ -169,5 +189,16 @@ export function InvoiceHistory() {
         )}
       </CardContent>
     </Card>
+
+    <SendInvoiceDialog
+      invoiceId={sendTarget?.id ?? null}
+      open={sendTarget !== null}
+      onOpenChange={(o) => !o && setSendTarget(null)}
+      documentLabel={sendTarget?.documentType === "receipt" ? "Receipt" : "Invoice"}
+      studentName={sendTarget?.studentName ?? ""}
+      defaultTo={sendFamily?.emailAddresses ?? []}
+      defaultCc={sendFamily?.brokerEmails ?? []}
+    />
+    </>
   );
 }

@@ -14,8 +14,9 @@ import { Calendar } from "@/components/ui/calendar";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { Checkbox } from "@/components/ui/checkbox";
-import { FileDown, X, CalendarDays, DollarSign, User, Clock, CalendarRange, FileText, Receipt, Users } from "lucide-react";
+import { FileDown, X, CalendarDays, DollarSign, User, Clock, CalendarRange, FileText, Receipt, Users, Send, CheckCircle2 } from "lucide-react";
 import { format } from "date-fns";
+import { SendInvoiceDialog } from "./send-invoice-dialog";
 
 const MONTHS = [
   "January", "February", "March", "April", "May", "June",
@@ -48,6 +49,18 @@ export function InvoiceForm({ selectedFamilyId, selectedBillingPeriodId, onFamil
   const [monthlySelectedDates, setMonthlySelectedDates] = useState<Date[]>([]);
   const [comments, setComments] = useState("");
   const [isGenerating, setIsGenerating] = useState(false);
+
+  // Result of the most recent generation (shown as a Download / Send choice card).
+  const [generatedResult, setGeneratedResult] = useState<{
+    invoiceId: number | null;
+    blobUrl: string;
+    filename: string;
+    studentName: string;
+    documentType: "invoice" | "receipt";
+    defaultTo: string[];
+    defaultCc: string[];
+  } | null>(null);
+  const [sendOpen, setSendOpen] = useState(false);
 
   // Family selection
   const [familyId, setFamilyId] = useState<number | null>(null);
@@ -186,21 +199,32 @@ export function InvoiceForm({ selectedFamilyId, selectedBillingPeriodId, onFamil
 
       const res = await apiRequest("POST", "/api/invoices/generate", body);
 
+      const invoiceIdHeader = res.headers.get("X-Invoice-Id");
       const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `${documentType}-${studentName.trim().replace(/\s+/g, "-").toLowerCase()}-${format(new Date(), "yyyy-MM-dd")}.pdf`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
+      const blobUrl = URL.createObjectURL(blob);
+      const filename = `${documentType}-${studentName.trim().replace(/\s+/g, "-").toLowerCase()}-${format(new Date(), "yyyy-MM-dd")}.pdf`;
+
+      const family = familyId ? families?.find((f) => f.id === familyId) : undefined;
+
+      // Replace any previous result (revoke its object URL to avoid leaks).
+      setGeneratedResult((prev) => {
+        if (prev) URL.revokeObjectURL(prev.blobUrl);
+        return {
+          invoiceId: invoiceIdHeader ? parseInt(invoiceIdHeader) : null,
+          blobUrl,
+          filename,
+          studentName: studentName.trim(),
+          documentType,
+          defaultTo: family?.emailAddresses ?? [],
+          defaultCc: family?.brokerEmails ?? [],
+        };
+      });
 
       queryClient.invalidateQueries({ queryKey: ["/api/invoices"] });
       queryClient.invalidateQueries({ queryKey: ["/api/billing/dashboard"] });
 
       const docLabel = documentType === "receipt" ? "Receipt" : "Invoice";
-      toast({ title: `${docLabel} generated`, description: `Your PDF ${documentType} has been downloaded.` });
+      toast({ title: `${docLabel} generated`, description: "Choose Download or Send below." });
     } catch (err: any) {
       toast({ title: "Error", description: err.message || "Failed to generate document.", variant: "destructive" });
     } finally {
@@ -208,7 +232,25 @@ export function InvoiceForm({ selectedFamilyId, selectedBillingPeriodId, onFamil
     }
   };
 
+  const handleDownloadGenerated = () => {
+    if (!generatedResult) return;
+    const a = document.createElement("a");
+    a.href = generatedResult.blobUrl;
+    a.download = generatedResult.filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  };
+
+  const dismissResult = () => {
+    setGeneratedResult((prev) => {
+      if (prev) URL.revokeObjectURL(prev.blobUrl);
+      return null;
+    });
+  };
+
   const handleReset = () => {
+    dismissResult();
     setDocumentType("invoice");
     setStudentName("");
     setClassDayTime("");
@@ -675,9 +717,47 @@ export function InvoiceForm({ selectedFamilyId, selectedBillingPeriodId, onFamil
                 Reset Form
               </Button>
             </div>
+
+            {generatedResult && (
+              <div className="rounded-lg border border-green-200 bg-green-50/60 dark:border-green-900 dark:bg-green-950/20 p-4 space-y-3">
+                <div className="flex items-center gap-2 text-sm font-medium text-green-700 dark:text-green-400">
+                  <CheckCircle2 className="h-4 w-4" />
+                  {generatedResult.documentType === "receipt" ? "Receipt" : "Invoice"} ready for {generatedResult.studentName}
+                </div>
+                <div className="flex flex-col gap-2">
+                  <Button variant="outline" onClick={handleDownloadGenerated} className="w-full">
+                    <FileDown className="h-4 w-4 mr-2" />
+                    Download PDF
+                  </Button>
+                  <Button
+                    onClick={() => setSendOpen(true)}
+                    disabled={generatedResult.invoiceId === null}
+                    className="w-full"
+                    title={generatedResult.invoiceId === null ? "Could not determine the saved invoice" : "Email this document"}
+                  >
+                    <Send className="h-4 w-4 mr-2" />
+                    Send by email
+                  </Button>
+                  <Button variant="ghost" size="sm" onClick={dismissResult} className="w-full">
+                    Done
+                  </Button>
+                </div>
+              </div>
+            )}
           </CardContent>
         </Card>
       </div>
+
+      <SendInvoiceDialog
+        invoiceId={generatedResult?.invoiceId ?? null}
+        open={sendOpen}
+        onOpenChange={setSendOpen}
+        documentLabel={generatedResult?.documentType === "receipt" ? "Receipt" : "Invoice"}
+        studentName={generatedResult?.studentName ?? ""}
+        defaultTo={generatedResult?.defaultTo ?? []}
+        defaultCc={generatedResult?.defaultCc ?? []}
+        billingPeriodId={billingPeriodId}
+      />
     </div>
   );
 }
