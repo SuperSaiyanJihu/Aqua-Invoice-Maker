@@ -18,7 +18,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { LayoutDashboard, FileText, Receipt, Mail, DollarSign, Download, Loader2, Pencil, Trash2, ArchiveRestore, Archive } from "lucide-react";
+import { LayoutDashboard, FileText, Receipt, Mail, DollarSign, Download, Loader2, Pencil, Trash2, ArchiveRestore, Archive, Send } from "lucide-react";
 import { ReminderEditDialog, type ReminderEditTarget } from "./reminder-edit-dialog";
 
 interface DashboardPeriod {
@@ -56,6 +56,7 @@ export function BillingDashboard({ onCreateInvoice }: BillingDashboardProps) {
   const [editTarget, setEditTarget] = useState<ReminderEditTarget | null>(null);
   const [editOpen, setEditOpen] = useState(false);
   const [deleteTargetId, setDeleteTargetId] = useState<number | null>(null);
+  const [sendTarget, setSendTarget] = useState<DashboardPeriod | null>(null);
 
   const { data: activePeriods, isLoading: activeLoading } = useQuery<DashboardPeriod[]>({
     queryKey: ["/api/billing/dashboard"],
@@ -115,6 +116,25 @@ export function BillingDashboard({ onCreateInvoice }: BillingDashboardProps) {
     },
     onError: (err: Error) => {
       toast({ title: "Error", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const sendMutation = useMutation({
+    mutationFn: async (period: DashboardPeriod) => {
+      const res = await apiRequest("POST", `/api/invoices/${period.invoiceId}/send`, {
+        billingPeriodId: period.id,
+        periodLabel: period.periodLabel,
+      });
+      return res.json();
+    },
+    onSuccess: (data: { to: string[]; cc: string[]; messageId: string | null }) => {
+      invalidate();
+      const recips = [...(data.to || []), ...(data.cc || [])].join(", ");
+      toast({ title: "Email sent", description: `Sent to ${recips}` });
+      setSendTarget(null);
+    },
+    onError: (err: Error) => {
+      toast({ title: "Failed to send", description: err.message, variant: "destructive" });
     },
   });
 
@@ -260,6 +280,21 @@ export function BillingDashboard({ onCreateInvoice }: BillingDashboardProps) {
                     Download PDF
                   </Button>
                 )}
+                {!archived && period.invoiceId && (
+                  <Button
+                    size="sm"
+                    onClick={() => setSendTarget(period)}
+                    disabled={sendMutation.isPending}
+                    title={
+                      period.emailAddresses?.length
+                        ? "Email this invoice"
+                        : "No parent email on file"
+                    }
+                  >
+                    <Send className="h-4 w-4 mr-2" />
+                    Send Email
+                  </Button>
+                )}
                 {archived ? (
                   <Button
                     size="sm"
@@ -358,6 +393,55 @@ export function BillingDashboard({ onCreateInvoice }: BillingDashboardProps) {
         onOpenChange={setEditOpen}
         period={editTarget}
       />
+
+      <AlertDialog open={sendTarget !== null} onOpenChange={(open) => !open && !sendMutation.isPending && setSendTarget(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              Send {sendTarget?.documentType === "receipt" ? "receipt" : "invoice"} by email?
+            </AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="space-y-2 text-sm">
+                <div>
+                  <span className="text-muted-foreground">To: </span>
+                  {sendTarget?.emailAddresses?.length
+                    ? sendTarget.emailAddresses.join(", ")
+                    : "— no parent email on file —"}
+                </div>
+                {sendTarget?.brokerEmails?.length ? (
+                  <div>
+                    <span className="text-muted-foreground">CC (broker): </span>
+                    {sendTarget.brokerEmails.join(", ")}
+                  </div>
+                ) : null}
+                <div className="text-muted-foreground">
+                  {sendTarget?.familyName} — {sendTarget?.periodLabel}. The PDF will be attached and
+                  this reminder will be marked as sent.
+                </div>
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={sendMutation.isPending}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => {
+                e.preventDefault();
+                if (sendTarget) sendMutation.mutate(sendTarget);
+              }}
+              disabled={sendMutation.isPending || !sendTarget?.emailAddresses?.length}
+            >
+              {sendMutation.isPending ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Sending…
+                </>
+              ) : (
+                "Send"
+              )}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <AlertDialog open={deleteTargetId !== null} onOpenChange={(open) => !open && setDeleteTargetId(null)}>
         <AlertDialogContent>

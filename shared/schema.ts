@@ -71,6 +71,22 @@ export const invoices = pgTable("invoices", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
+export const emailLogs = pgTable("email_logs", {
+  id: serial("id").primaryKey(),
+  invoiceId: integer("invoice_id").references(() => invoices.id, { onDelete: "set null" }),
+  billingPeriodId: integer("billing_period_id").references(() => billingPeriods.id, { onDelete: "set null" }),
+  familyId: integer("family_id").references(() => families.id, { onDelete: "set null" }),
+  toAddresses: text("to_addresses").array().notNull().default([]),
+  ccAddresses: text("cc_addresses").array().notNull().default([]),
+  replyTo: text("reply_to"),
+  fromAddress: text("from_address"),
+  subject: text("subject").notNull(),
+  status: text("status").notNull(), // "sent" | "failed"
+  providerMessageId: text("provider_message_id"),
+  errorMessage: text("error_message"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
 export const insertUserSchema = createInsertSchema(users)
   .omit({ id: true, passwordHash: true, createdAt: true, updatedAt: true, mustChangePin: true })
   .extend({ password: z.string().regex(/^\d{4}$/, "PIN must be exactly 4 digits").optional() });
@@ -87,3 +103,7 @@ export type InsertBillingPeriod = z.infer<typeof insertBillingPeriodSchema>;
 export type BillingPeriod = typeof billingPeriods.$inferSelect;
 export type InsertInvoice = z.infer<typeof insertInvoiceSchema>;
 export type Invoice = typeof invoices.$inferSelect;
+
+export const insertEmailLogSchema = createInsertSchema(emailLogs).omit({ id: true, createdAt: true });
+export type InsertEmailLog = z.infer<typeof insertEmailLogSchema>;
+export type EmailLog = typeof emailLogs.$inferSelect;

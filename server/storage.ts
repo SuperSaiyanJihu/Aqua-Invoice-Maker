@@ -2,6 +2,7 @@ import {
   type Invoice, type InsertInvoice, invoices,
   type Family, type InsertFamily, families,
   type BillingPeriod, type InsertBillingPeriod, billingPeriods,
+  type EmailLog, type InsertEmailLog, emailLogs,
   type SelectUser, users,
 } from "@shared/schema";
 import bcrypt from "bcryptjs";
@@ -41,6 +42,10 @@ export interface IStorage {
   updateBillingPeriod(id: number, updates: Partial<InsertBillingPeriod> & { archivedAt?: Date | null }): Promise<BillingPeriod | undefined>;
   deleteBillingPeriod(id: number): Promise<boolean>;
   generateUpcomingPeriods(): Promise<void>;
+
+  // Email logs
+  createEmailLog(log: InsertEmailLog): Promise<EmailLog>;
+  getEmailLogsForInvoice(invoiceId: number): Promise<EmailLog[]>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -124,6 +129,20 @@ export class DatabaseStorage implements IStorage {
   async deleteInvoice(id: number): Promise<boolean> {
     const result = await db.delete(invoices).where(eq(invoices.id, id)).returning();
     return result.length > 0;
+  }
+
+  // --- Email logs ---
+  async createEmailLog(log: InsertEmailLog): Promise<EmailLog> {
+    const [created] = await db.insert(emailLogs).values(log).returning();
+    return created;
+  }
+
+  async getEmailLogsForInvoice(invoiceId: number): Promise<EmailLog[]> {
+    return await db
+      .select()
+      .from(emailLogs)
+      .where(eq(emailLogs.invoiceId, invoiceId))
+      .orderBy(desc(emailLogs.createdAt));
   }
 
   // --- Families ---

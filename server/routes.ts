@@ -7,6 +7,38 @@ import { db } from "./db";
 import { billingPeriods } from "@shared/schema";
 import { eq } from "drizzle-orm";
 import { generateInvoicePdf } from "./pdf";
+import { sendInvoiceEmail, isEmailConfigured } from "./email";
+import type { Invoice } from "@shared/schema";
+
+// Generate the PDF buffer for a stored invoice record.
+async function buildPdfForInvoice(invoice: Invoice): Promise<Buffer> {
+  const docType = (invoice.documentType as "invoice" | "receipt") || "invoice";
+  if (invoice.invoiceType === "monthly") {
+    return generateInvoicePdf({
+      invoiceType: "monthly",
+      documentType: docType,
+      invoiceNumber: invoice.invoiceNumber,
+      studentName: invoice.studentName,
+      classDayTime: invoice.classDayTime,
+      monthlyMonth: invoice.monthlyMonth || "",
+      monthlyYear: invoice.monthlyYear || "",
+      monthlyDay: invoice.monthlyDay || "",
+      monthlyTotal: parseFloat(invoice.monthlyTotal || "0"),
+      attendanceDates: invoice.attendanceDates,
+      comments: invoice.comments,
+    });
+  }
+  return generateInvoicePdf({
+    invoiceType: "attendance",
+    documentType: docType,
+    invoiceNumber: invoice.invoiceNumber,
+    studentName: invoice.studentName,
+    classDayTime: invoice.classDayTime,
+    ratePerClass: parseFloat(invoice.ratePerClass),
+    attendanceDates: invoice.attendanceDates,
+    comments: invoice.comments,
+  });
+}
 
 // Simple in-memory rate limiter
 const rateLimitMap = new Map<string, { count: number; resetTime: number }>();
@@ -307,38 +339,129 @@ export async function registerRoutes(
       }
 
       const docType = invoice.documentType as "invoice" | "receipt" || "invoice";
-      let pdfBuffer: Buffer;
-
-      if (invoice.invoiceType === "monthly") {
-        pdfBuffer = await generateInvoicePdf({
-          invoiceType: "monthly",
-          documentType: docType,
-          invoiceNumber: invoice.invoiceNumber,
-          studentName: invoice.studentName,
-          classDayTime: invoice.classDayTime,
-          monthlyMonth: invoice.monthlyMonth || "",
-          monthlyYear: invoice.monthlyYear || "",
-          monthlyDay: invoice.monthlyDay || "",
-          monthlyTotal: parseFloat(invoice.monthlyTotal || "0"),
-          attendanceDates: invoice.attendanceDates,
-          comments: invoice.comments,
-        });
-      } else {
-        pdfBuffer = await generateInvoicePdf({
-          invoiceType: "attendance",
-          documentType: docType,
-          invoiceNumber: invoice.invoiceNumber,
-          studentName: invoice.studentName,
-          classDayTime: invoice.classDayTime,
-          ratePerClass: parseFloat(invoice.ratePerClass),
-          attendanceDates: invoice.attendanceDates,
-          comments: invoice.comments,
-        });
-      }
+      const pdfBuffer = await buildPdfForInvoice(invoice);
 
       res.setHeader("Content-Type", "application/pdf");
       res.setHeader("Content-Disposition", `attachment; filename="${docType}-${invoice.invoiceNumber}.pdf"`);
       res.send(pdfBuffer);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Send an existing invoice by email (with PDF attached) and log the result.
+  const sendEmailSchema = z.object({
+    to: z.array(z.string().email()).optional(),
+    cc: z.array(z.string().email()).optional(),
+    billingPeriodId: z.number().int().nullable().optional(),
+    periodLabel: z.string().max(100).nullable().optional(),
+    markSent: z.boolean().optional().default(true),
+  });
+
+  app.post("/api/invoices/:id/send", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      if (isNaN(id)) return res.status(400).json({ error: "Invalid invoice ID" });
+
+      if (!isEmailConfigured()) {
+        return res.status(503).json({
+          error: "Email is not configured. The Resend API key (Invoice_Email) is missing.",
+        });
+      }
+
+      const body = sendEmailSchema.parse(req.body);
+
+      const invoice = await storage.getInvoice(id);
+      if (!invoice) return res.status(404).json({ error: "Invoice not found" });
+
+      const family = invoice.familyId ? await storage.getFamily(invoice.familyId) : null;
+
+      // Recipients: explicit override, otherwise parents (to) + brokers (cc).
+      const to = body.to ?? family?.emailAddresses ?? [];
+      const cc = body.cc ?? family?.brokerEmails ?? [];
+
+      if (to.length === 0) {
+        return res.status(400).json({
+          error: "No recipient email addresses. Add a parent email to the family, or pass `to`.",
+        });
+      }
+
+      const pdfBuffer = await buildPdfForInvoice(invoice);
+
+      try {
+        const { messageId, email } = await sendInvoiceEmail({
+          invoice,
+          family: family ?? null,
+          to,
+          cc,
+          periodLabel: body.periodLabel ?? null,
+          pdfBuffer,
+        });
+
+        const log = await storage.createEmailLog({
+          invoiceId: invoice.id,
+          billingPeriodId: body.billingPeriodId ?? null,
+          familyId: invoice.familyId ?? null,
+          toAddresses: email.to,
+          ccAddresses: email.cc ?? [],
+          replyTo: email.replyTo,
+          fromAddress: email.from,
+          subject: email.subject,
+          status: "sent",
+          providerMessageId: messageId,
+          errorMessage: null,
+        });
+
+        // Mark the billing period as sent (which archives it), mirroring the checkbox flow.
+        if (body.markSent && body.billingPeriodId) {
+          await storage.updateBillingPeriod(body.billingPeriodId, {
+            invoiceSent: true,
+            isArchived: true,
+            archivedAt: new Date(),
+          } as any);
+        }
+
+        res.json({
+          success: true,
+          messageId,
+          to: email.to,
+          cc: email.cc ?? [],
+          subject: email.subject,
+          log,
+        });
+      } catch (sendErr: any) {
+        // Document the failed attempt too.
+        await storage.createEmailLog({
+          invoiceId: invoice.id,
+          billingPeriodId: body.billingPeriodId ?? null,
+          familyId: invoice.familyId ?? null,
+          toAddresses: to,
+          ccAddresses: cc,
+          replyTo: null,
+          fromAddress: null,
+          subject: `Excel Aquatics ${invoice.invoiceNumber}`,
+          status: "failed",
+          providerMessageId: null,
+          errorMessage: sendErr.message?.slice(0, 500) || "Unknown error",
+        });
+        res.status(502).json({ error: `Failed to send email: ${sendErr.message}` });
+      }
+    } catch (err: any) {
+      if (err.name === "ZodError") {
+        const messages = err.errors.map((e: any) => e.message).join(", ");
+        return res.status(400).json({ error: messages });
+      }
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Email send history for an invoice (documentation).
+  app.get("/api/invoices/:id/emails", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      if (isNaN(id)) return res.status(400).json({ error: "Invalid invoice ID" });
+      const logs = await storage.getEmailLogsForInvoice(id);
+      res.json(logs);
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }
