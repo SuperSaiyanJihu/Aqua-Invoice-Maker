@@ -3,6 +3,7 @@ import { useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import type { Family } from "@shared/schema";
+import { validateStudentNames } from "@shared/validation";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -112,6 +113,12 @@ export function FamilyDialog({ open, onOpenChange, family }: FamilyDialogProps) 
       return;
     }
 
+    const studentNamesError = validateStudentNames(studentNames);
+    if (studentNamesError) {
+      toast({ title: "Missing information", description: studentNamesError, variant: "destructive" });
+      return;
+    }
+
     if (reminderFrequency === "biweekly" && !reminderAnchorDate) {
       toast({ title: "Missing information", description: "Please set the billing start date for the 2-week reminder schedule.", variant: "destructive" });
       return;
@@ -174,11 +181,14 @@ export function FamilyDialog({ open, onOpenChange, family }: FamilyDialogProps) 
                 <Label htmlFor="studentNames">Student Name(s)</Label>
                 <Input
                   id="studentNames"
-                  placeholder="e.g. John Smith"
+                  placeholder="First and last name, e.g. John Smith"
                   value={studentNames}
                   onChange={(e) => setStudentNames(e.target.value)}
                   maxLength={200}
                 />
+                <p className="text-xs text-muted-foreground">
+                  Include first and last name. For multiple students, separate with a comma.
+                </p>
               </div>
             </div>
             <div className="space-y-2">
