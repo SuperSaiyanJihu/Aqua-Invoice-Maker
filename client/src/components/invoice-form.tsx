@@ -1,6 +1,9 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import type { Family } from "@shared/schema";
+import { validateStudentNames } from "@shared/validation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -11,8 +14,18 @@ import { Calendar } from "@/components/ui/calendar";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { Checkbox } from "@/components/ui/checkbox";
-import { FileDown, X, CalendarDays, DollarSign, User, Clock, CalendarRange, FileText, Receipt } from "lucide-react";
+import { FileDown, X, CalendarDays, DollarSign, User, Clock, CalendarRange, FileText, Receipt, Users, Send, CheckCircle2 } from "lucide-react";
 import { format } from "date-fns";
+import { SendInvoiceDialog } from "./send-invoice-dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 const MONTHS = [
   "January", "February", "March", "April", "May", "June",
@@ -23,7 +36,14 @@ const DAYS_OF_WEEK = [
   "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday",
 ];
 
-export function InvoiceForm() {
+interface InvoiceFormProps {
+  selectedFamilyId?: number | null;
+  selectedBillingPeriodId?: number | null;
+  onFamilyUsed?: () => void;
+  onNavigateToDashboard?: () => void;
+}
+
+export function InvoiceForm({ selectedFamilyId, selectedBillingPeriodId, onFamilyUsed, onNavigateToDashboard }: InvoiceFormProps) {
   const { toast } = useToast();
   const [invoiceType, setInvoiceType] = useState<"attendance" | "monthly">("attendance");
   const [documentType, setDocumentType] = useState<"invoice" | "receipt">("invoice");
@@ -39,6 +59,75 @@ export function InvoiceForm() {
   const [monthlySelectedDates, setMonthlySelectedDates] = useState<Date[]>([]);
   const [comments, setComments] = useState("");
   const [isGenerating, setIsGenerating] = useState(false);
+
+  // Result of the most recent generation (shown as a Download / Send choice card).
+  const [generatedResult, setGeneratedResult] = useState<{
+    invoiceId: number | null;
+    blobUrl: string;
+    filename: string;
+    studentName: string;
+    documentType: "invoice" | "receipt";
+    defaultTo: string[];
+    defaultCc: string[];
+  } | null>(null);
+  const [sendOpen, setSendOpen] = useState(false);
+
+  // After a successful email send: confirm the action, then return to the dashboard.
+  const [sentConfirm, setSentConfirm] = useState<{
+    docLabel: string;
+    studentName: string;
+    recipients: string[];
+  } | null>(null);
+
+  // Family selection
+  const [familyId, setFamilyId] = useState<number | null>(null);
+  const [billingPeriodId, setBillingPeriodId] = useState<number | null>(null);
+
+  const { data: families } = useQuery<Family[]>({
+    queryKey: ["/api/families"],
+  });
+
+  // Handle external family selection (from Dashboard or Family list).
+  // Wait for the families query so the prefill isn't skipped on first visit.
+  useEffect(() => {
+    if (selectedFamilyId && families) {
+      setFamilyId(selectedFamilyId);
+      setBillingPeriodId(selectedBillingPeriodId || null);
+      const family = families.find((f) => f.id === selectedFamilyId);
+      if (family) {
+        prefillFromFamily(family);
+      }
+      onFamilyUsed?.();
+    }
+  }, [selectedFamilyId, selectedBillingPeriodId, families]);
+
+  // Handle dropdown family selection
+  const handleFamilySelect = (value: string) => {
+    if (value === "none") {
+      setFamilyId(null);
+      setBillingPeriodId(null);
+      return;
+    }
+    const id = parseInt(value);
+    setFamilyId(id);
+    setBillingPeriodId(null);
+    const family = families?.find((f) => f.id === id);
+    if (family) {
+      prefillFromFamily(family);
+    }
+  };
+
+  const prefillFromFamily = (family: Family) => {
+    setStudentName(family.studentNames);
+    setClassDayTime(family.classDayTime);
+    setInvoiceType(family.billingType as "attendance" | "monthly");
+    setDocumentType((family.documentType as "invoice" | "receipt") || "invoice");
+    if (family.billingType === "attendance") {
+      setRatePerClass(family.ratePerClass || "");
+    } else {
+      setMonthlyTotal(family.monthlyTotal || "");
+    }
+  };
 
   const datesByMonth = selectedDates.reduce<Record<string, Date[]>>((acc, d) => {
     const key = format(d, "MMMM yyyy");
@@ -62,8 +151,9 @@ export function InvoiceForm() {
   };
 
   const handleGenerate = async () => {
-    if (!studentName.trim()) {
-      toast({ title: "Missing information", description: "Please enter a student name.", variant: "destructive" });
+    const studentNameError = validateStudentNames(studentName);
+    if (studentNameError) {
+      toast({ title: "Missing information", description: studentNameError, variant: "destructive" });
       return;
     }
     if (!classDayTime.trim()) {
@@ -107,6 +197,8 @@ export function InvoiceForm() {
         studentName: studentName.trim(),
         classDayTime: classDayTime.trim(),
         comments: comments.trim() || null,
+        familyId: familyId || null,
+        billingPeriodId: billingPeriodId || null,
       };
 
       if (invoiceType === "attendance") {
@@ -124,20 +216,32 @@ export function InvoiceForm() {
 
       const res = await apiRequest("POST", "/api/invoices/generate", body);
 
+      const invoiceIdHeader = res.headers.get("X-Invoice-Id");
       const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `${documentType}-${studentName.trim().replace(/\s+/g, "-").toLowerCase()}-${format(new Date(), "yyyy-MM-dd")}.pdf`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
+      const blobUrl = URL.createObjectURL(blob);
+      const filename = `${documentType}-${studentName.trim().replace(/\s+/g, "-").toLowerCase()}-${format(new Date(), "yyyy-MM-dd")}.pdf`;
+
+      const family = familyId ? families?.find((f) => f.id === familyId) : undefined;
+
+      // Replace any previous result (revoke its object URL to avoid leaks).
+      setGeneratedResult((prev) => {
+        if (prev) URL.revokeObjectURL(prev.blobUrl);
+        return {
+          invoiceId: invoiceIdHeader ? parseInt(invoiceIdHeader) : null,
+          blobUrl,
+          filename,
+          studentName: studentName.trim(),
+          documentType,
+          defaultTo: family?.emailAddresses ?? [],
+          defaultCc: family?.brokerEmails ?? [],
+        };
+      });
 
       queryClient.invalidateQueries({ queryKey: ["/api/invoices"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/billing/dashboard"] });
 
       const docLabel = documentType === "receipt" ? "Receipt" : "Invoice";
-      toast({ title: `${docLabel} generated`, description: `Your PDF ${documentType} has been downloaded.` });
+      toast({ title: `${docLabel} generated`, description: "Choose Download or Send below." });
     } catch (err: any) {
       toast({ title: "Error", description: err.message || "Failed to generate document.", variant: "destructive" });
     } finally {
@@ -145,7 +249,42 @@ export function InvoiceForm() {
     }
   };
 
+  const handleDownloadGenerated = () => {
+    if (!generatedResult) return;
+    const a = document.createElement("a");
+    a.href = generatedResult.blobUrl;
+    a.download = generatedResult.filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  };
+
+  const dismissResult = () => {
+    setGeneratedResult((prev) => {
+      if (prev) URL.revokeObjectURL(prev.blobUrl);
+      return null;
+    });
+  };
+
+  // Triggered when the send dialog reports a successful email send.
+  const handleSent = (info: { to: string[]; cc: string[] }) => {
+    if (!generatedResult) return;
+    setSentConfirm({
+      docLabel: generatedResult.documentType === "receipt" ? "Receipt" : "Invoice",
+      studentName: generatedResult.studentName,
+      recipients: [...info.to, ...info.cc],
+    });
+  };
+
+  // User acknowledged the "email sent" confirmation: clear the form and go to the dashboard.
+  const handleSentConfirmClose = () => {
+    setSentConfirm(null);
+    handleReset();
+    onNavigateToDashboard?.();
+  };
+
   const handleReset = () => {
+    dismissResult();
     setDocumentType("invoice");
     setStudentName("");
     setClassDayTime("");
@@ -158,6 +297,8 @@ export function InvoiceForm() {
     setShowMonthlyDates(false);
     setMonthlySelectedDates([]);
     setComments("");
+    setFamilyId(null);
+    setBillingPeriodId(null);
   };
 
   const isFormValid = invoiceType === "attendance"
@@ -169,6 +310,41 @@ export function InvoiceForm() {
   return (
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
       <div className="lg:col-span-2 space-y-6">
+        {/* Family Selector */}
+        {families && families.length > 0 && (
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Users className="h-5 w-5 text-primary" />
+                Select Family
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <Select
+                value={familyId?.toString() || "none"}
+                onValueChange={handleFamilySelect}
+              >
+                <SelectTrigger data-testid="select-family">
+                  <SelectValue placeholder="Choose a family to pre-fill..." />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">— No family (manual entry) —</SelectItem>
+                  {families.map((f) => (
+                    <SelectItem key={f.id} value={f.id.toString()}>
+                      {f.familyName} — {f.studentNames}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {familyId && (
+                <p className="text-xs text-muted-foreground mt-2">
+                  Fields below have been pre-filled from family data. You can still edit them.
+                </p>
+              )}
+            </CardContent>
+          </Card>
+        )}
+
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
@@ -239,12 +415,13 @@ export function InvoiceForm() {
                 <Label htmlFor="studentName">Student Full Name</Label>
                 <Input
                   id="studentName"
-                  placeholder="e.g. John Smith"
+                  placeholder="First and last name, e.g. John Smith"
                   value={studentName}
                   onChange={(e) => setStudentName(e.target.value)}
                   maxLength={100}
                   data-testid="input-student-name"
                 />
+                <p className="text-xs text-muted-foreground">First and last name required.</p>
               </div>
               <div className="space-y-2">
                 <Label htmlFor="classDayTime">
@@ -574,9 +751,67 @@ export function InvoiceForm() {
                 Reset Form
               </Button>
             </div>
+
+            {generatedResult && (
+              <div className="rounded-lg border border-green-200 bg-green-50/60 dark:border-green-900 dark:bg-green-950/20 p-4 space-y-3">
+                <div className="flex items-center gap-2 text-sm font-medium text-green-700 dark:text-green-400">
+                  <CheckCircle2 className="h-4 w-4" />
+                  {generatedResult.documentType === "receipt" ? "Receipt" : "Invoice"} ready for {generatedResult.studentName}
+                </div>
+                <div className="flex flex-col gap-2">
+                  <Button variant="outline" onClick={handleDownloadGenerated} className="w-full">
+                    <FileDown className="h-4 w-4 mr-2" />
+                    Download PDF
+                  </Button>
+                  <Button
+                    onClick={() => setSendOpen(true)}
+                    disabled={generatedResult.invoiceId === null}
+                    className="w-full"
+                    title={generatedResult.invoiceId === null ? "Could not determine the saved invoice" : "Email this document"}
+                  >
+                    <Send className="h-4 w-4 mr-2" />
+                    Send by email
+                  </Button>
+                  <Button variant="ghost" size="sm" onClick={dismissResult} className="w-full">
+                    Done
+                  </Button>
+                </div>
+              </div>
+            )}
           </CardContent>
         </Card>
       </div>
+
+      <SendInvoiceDialog
+        invoiceId={generatedResult?.invoiceId ?? null}
+        open={sendOpen}
+        onOpenChange={setSendOpen}
+        documentLabel={generatedResult?.documentType === "receipt" ? "Receipt" : "Invoice"}
+        studentName={generatedResult?.studentName ?? ""}
+        defaultTo={generatedResult?.defaultTo ?? []}
+        defaultCc={generatedResult?.defaultCc ?? []}
+        billingPeriodId={billingPeriodId}
+        onSent={handleSent}
+      />
+
+      <AlertDialog open={sentConfirm !== null} onOpenChange={(o) => !o && handleSentConfirmClose()}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2">
+              <CheckCircle2 className="h-5 w-5 text-green-600" />
+              {sentConfirm?.docLabel} sent
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {sentConfirm
+                ? `The ${sentConfirm.docLabel.toLowerCase()} for ${sentConfirm.studentName} was emailed to ${sentConfirm.recipients.join(", ")}.`
+                : ""}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogAction>Back to Dashboard</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

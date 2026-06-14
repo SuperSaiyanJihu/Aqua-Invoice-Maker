@@ -3,13 +3,14 @@ import { build as viteBuild } from "vite";
 import { rm, readFile } from "fs/promises";
 
 const allowlist = [
-  "connect-pg-simple",
+  // NOTE: connect-pg-simple is intentionally NOT bundled. It reads ./table.sql
+  // relative to its own __dirname at runtime, which breaks if bundled. Keeping it
+  // external loads it from node_modules where table.sql sits beside index.js.
   "date-fns",
   "drizzle-orm",
   "drizzle-zod",
   "express",
   "express-session",
-  "memorystore",
   "nanoid",
   "passport",
   "passport-local",
