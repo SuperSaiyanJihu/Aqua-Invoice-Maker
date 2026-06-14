@@ -20,11 +20,13 @@ import {
 
 export function EmailTemplateSettings() {
   const { toast } = useToast();
-  const [subject, setSubject] = useState("");
-  const [body, setBody] = useState("");
+  // Seed with the default so the editor always has content to edit/save, even if
+  // the GET hasn't returned yet (or errors). Overwritten by the saved value below.
+  const [subject, setSubject] = useState(DEFAULT_EMAIL_TEMPLATE.subject);
+  const [body, setBody] = useState(DEFAULT_EMAIL_TEMPLATE.body);
   const bodyRef = useRef<HTMLTextAreaElement>(null);
 
-  const { data: template, isLoading } = useQuery<EmailTemplate>({
+  const { data: template, isLoading, error } = useQuery<EmailTemplate>({
     queryKey: ["/api/settings/email-template"],
   });
 
@@ -75,7 +77,7 @@ export function EmailTemplateSettings() {
     setBody(DEFAULT_EMAIL_TEMPLATE.body);
   };
 
-  const isDirty = !!template && (subject !== template.subject || body !== template.body);
+  const canSave = subject.trim().length > 0 && body.trim().length > 0 && !saveMutation.isPending;
   const previewSubject = renderTemplate(subject, SAMPLE_VARS);
   const previewBody = renderTemplate(body, SAMPLE_VARS);
 
@@ -107,6 +109,14 @@ export function EmailTemplateSettings() {
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
+          {error && (
+            <div
+              className="rounded-md border border-destructive/50 bg-destructive/10 px-3 py-2 text-sm text-destructive"
+              data-testid="text-template-load-error"
+            >
+              Couldn't load the saved template ({(error as Error).message}). Showing the default — you can still edit and save.
+            </div>
+          )}
           <div className="space-y-2">
             <Label htmlFor="email-subject">Subject</Label>
             <Input
@@ -151,7 +161,7 @@ export function EmailTemplateSettings() {
           <div className="flex items-center gap-2 pt-2">
             <Button
               onClick={() => saveMutation.mutate({ subject, body })}
-              disabled={!isDirty || saveMutation.isPending}
+              disabled={!canSave}
               data-testid="button-save-template"
             >
               {saveMutation.isPending ? "Saving..." : "Save template"}
