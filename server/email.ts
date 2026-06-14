@@ -1,5 +1,8 @@
 import { Resend } from "resend";
 import type { Invoice, Family } from "@shared/schema";
+import { renderTemplate, type EmailTemplate, type TemplateVars } from "@shared/email-template";
+
+const BUSINESS_NAME = "Excel Aquatics";
 
 // Resend API key is provided via the Railway variable `Invoice_Email`.
 const RESEND_API_KEY = process.env.Invoice_Email;
@@ -51,8 +54,21 @@ interface BuildEmailArgs {
   cc?: string[];
   replyTo?: string;
   from?: string;
-  periodLabel?: string | null;
+  template: EmailTemplate;
+  period: { month: string; year: string; monthYear: string };
   pdfBuffer: Buffer;
+}
+
+/** Render a plain-text template body into a styled HTML email body. */
+function renderHtmlBody(text: string): string {
+  const paragraphs = text
+    .split(/\n{2,}/)
+    .map((block) => `<p>${escapeHtml(block).replace(/\n/g, "<br/>")}</p>`)
+    .join("\n    ");
+  return `
+  <div style="font-family: Arial, Helvetica, sans-serif; color: #1a1a1a; line-height: 1.5;">
+    ${paragraphs}
+  </div>`;
 }
 
 export interface BuiltEmail {
@@ -71,58 +87,40 @@ export interface BuiltEmail {
  * Exposed separately so it can be unit-tested without hitting the network.
  */
 export function buildInvoiceEmail(args: BuildEmailArgs): BuiltEmail {
-  const { invoice, to, cc, pdfBuffer, periodLabel } = args;
+  const { invoice, to, cc, pdfBuffer, template, period } = args;
   const docLabel = invoice.documentType === "receipt" ? "Receipt" : "Invoice";
   const { first, last } = splitStudentName(invoice.studentName);
-  const greetingName = [first, last].filter(Boolean).join(" ") || "there";
 
   const amount =
     invoice.invoiceType === "monthly"
       ? invoice.monthlyTotal
         ? `$${parseFloat(invoice.monthlyTotal).toFixed(2)}`
-        : null
+        : ""
       : invoice.ratePerClass
         ? `$${parseFloat(invoice.ratePerClass).toFixed(2)}/class`
-        : null;
+        : "";
 
-  const periodText = periodLabel ? ` for ${periodLabel}` : "";
-  const subject = `Excel Aquatics ${docLabel} ${invoice.invoiceNumber} — ${first} ${last}`.trim();
+  const vars: TemplateVars = {
+    firstName: first,
+    lastName: last,
+    studentName: invoice.studentName,
+    documentType: docLabel.toLowerCase(),
+    DocumentType: docLabel,
+    invoiceNumber: invoice.invoiceNumber,
+    amount,
+    classDayTime: invoice.classDayTime || "",
+    month: period.month,
+    year: period.year,
+    monthYear: period.monthYear,
+    period: period.monthYear,
+    businessName: BUSINESS_NAME,
+  };
+
+  const subject = renderTemplate(template.subject, vars).trim();
+  const text = renderTemplate(template.body, vars);
+  const html = renderHtmlBody(text);
 
   const filename = `${invoice.documentType === "receipt" ? "receipt" : "invoice"}-${invoice.invoiceNumber}.pdf`;
-
-  const lines = [
-    `Hello,`,
-    ``,
-    `Please find attached the ${docLabel.toLowerCase()} for ${greetingName}${periodText}.`,
-    invoice.classDayTime ? `Class: ${invoice.classDayTime}` : "",
-    amount ? `Amount: ${amount}` : "",
-    `${docLabel} number: ${invoice.invoiceNumber}`,
-    ``,
-    `If you have any questions, simply reply to this email.`,
-    ``,
-    `Thank you,`,
-    `Excel Aquatics`,
-    `Colonie, NY`,
-  ].filter((l) => l !== "" || true);
-
-  const text = lines.join("\n");
-
-  const html = `
-  <div style="font-family: Arial, Helvetica, sans-serif; color: #1a1a1a; line-height: 1.5;">
-    <p>Hello,</p>
-    <p>Please find attached the ${escapeHtml(docLabel.toLowerCase())} for
-      <strong>${escapeHtml(greetingName)}</strong>${escapeHtml(periodText)}.</p>
-    <table style="border-collapse: collapse; margin: 12px 0;">
-      ${invoice.classDayTime ? `<tr><td style="padding:2px 12px 2px 0; color:#555;">Class</td><td style="padding:2px 0;"><strong>${escapeHtml(invoice.classDayTime)}</strong></td></tr>` : ""}
-      ${amount ? `<tr><td style="padding:2px 12px 2px 0; color:#555;">Amount</td><td style="padding:2px 0;"><strong>${escapeHtml(amount)}</strong></td></tr>` : ""}
-      <tr><td style="padding:2px 12px 2px 0; color:#555;">${escapeHtml(docLabel)} #</td><td style="padding:2px 0;"><strong>${escapeHtml(invoice.invoiceNumber)}</strong></td></tr>
-    </table>
-    <p>If you have any questions, simply reply to this email.</p>
-    <p style="margin-top:20px;">Thank you,<br/>
-      <strong style="color:#1a5276;">Excel Aquatics</strong><br/>
-      <span style="color:#555;">Colonie, NY</span>
-    </p>
-  </div>`;
 
   return {
     from: args.from || EMAIL_FROM,

@@ -5,8 +5,9 @@ import { FamilyList } from "@/components/family-list";
 import { BillingDashboard } from "@/components/billing-dashboard";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
-import { LayoutDashboard, Users, FileText, History, LogOut, ShieldCheck } from "lucide-react";
+import { LayoutDashboard, Users, FileText, History, LogOut, ShieldCheck, Mail } from "lucide-react";
 import { UserManagement } from "@/components/user-management";
+import { EmailTemplateSettings } from "@/components/email-template-settings";
 import { useAuth } from "@/hooks/use-auth";
 import logoImg from "@assets/Logo_1772310414809.png";
 
@@ -87,6 +88,12 @@ export default function Home() {
                 Users
               </TabsTrigger>
             )}
+            {user?.isAdmin && (
+              <TabsTrigger value="settings" data-testid="tab-settings">
+                <Mail className="h-4 w-4 mr-2" />
+                Email Template
+              </TabsTrigger>
+            )}
           </TabsList>
 
           <TabsContent value="dashboard">
@@ -121,6 +128,12 @@ export default function Home() {
           {user?.isAdmin && (
             <TabsContent value="users">
               <UserManagement />
+            </TabsContent>
+          )}
+
+          {user?.isAdmin && (
+            <TabsContent value="settings">
+              <EmailTemplateSettings />
             </TabsContent>
           )}
         </Tabs>

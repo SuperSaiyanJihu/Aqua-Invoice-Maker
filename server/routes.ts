@@ -1,15 +1,43 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import { requireAuth } from "./auth";
+import { requireAuth, requireAdmin } from "./auth";
 import { z } from "zod";
 import { db } from "./db";
 import { billingPeriods } from "@shared/schema";
 import { eq } from "drizzle-orm";
 import { generateInvoicePdf } from "./pdf";
-import { sendInvoiceEmail, isEmailConfigured } from "./email";
+import { sendInvoiceEmail, buildInvoiceEmail, isEmailConfigured } from "./email";
 import { validateStudentNames } from "@shared/validation";
+import { deriveMonthYearFromDates } from "@shared/email-template";
 import type { Invoice } from "@shared/schema";
+
+// Resolve the "smart" billing period (month/year) for an invoice email:
+// explicit label > linked billing period's label > monthly fields > attendance dates.
+async function resolveMonthYear(
+  invoice: Invoice,
+  billingPeriodId?: number | null,
+  explicitLabel?: string | null,
+): Promise<{ month: string; year: string; monthYear: string }> {
+  if (explicitLabel) {
+    return { month: "", year: "", monthYear: explicitLabel };
+  }
+  if (billingPeriodId) {
+    const period = await storage.getBillingPeriod(billingPeriodId);
+    if (period?.periodLabel) {
+      const derived = deriveMonthYearFromDates([period.periodStart, period.periodEnd]);
+      return { month: derived.month, year: derived.year, monthYear: period.periodLabel };
+    }
+  }
+  if (invoice.invoiceType === "monthly" && invoice.monthlyMonth && invoice.monthlyYear) {
+    return {
+      month: invoice.monthlyMonth,
+      year: invoice.monthlyYear,
+      monthYear: `${invoice.monthlyMonth} ${invoice.monthlyYear}`,
+    };
+  }
+  return deriveMonthYearFromDates(invoice.attendanceDates);
+}
 
 // Zod helper: a student name field that requires a first and last name.
 const fullStudentName = (max: number, label: string) =>
@@ -106,7 +134,38 @@ export async function registerRoutes(
   app.use("/api/families", requireAuth);
   app.use("/api/billing", requireAuth);
   app.use("/api/invoices", requireAuth);
+  app.use("/api/settings", requireAuth);
   // Admin routes are protected in auth.ts with both requireAuth + requireAdmin
+
+  // =====================
+  // SETTINGS ROUTES
+  // =====================
+
+  const emailTemplateSchema = z.object({
+    subject: z.string().min(1).max(300),
+    body: z.string().min(1).max(5000),
+  });
+
+  app.get("/api/settings/email-template", async (_req, res) => {
+    try {
+      res.json(await storage.getEmailTemplate());
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.put("/api/settings/email-template", requireAdmin, async (req, res) => {
+    try {
+      const data = emailTemplateSchema.parse(req.body);
+      res.json(await storage.updateEmailTemplate(data));
+    } catch (err: any) {
+      if (err.name === "ZodError") {
+        const messages = err.errors.map((e: any) => e.message).join(", ");
+        return res.status(400).json({ error: messages });
+      }
+      res.status(500).json({ error: err.message });
+    }
+  });
 
   // =====================
   // FAMILY ROUTES
@@ -399,13 +458,20 @@ export async function registerRoutes(
 
       const pdfBuffer = await buildPdfForInvoice(invoice);
 
+      const template = await storage.getEmailTemplate();
+      const period = await resolveMonthYear(invoice, body.billingPeriodId, body.periodLabel);
+
+      // Build once so the same rendered subject is logged on both success and failure.
+      const built = buildInvoiceEmail({ invoice, family: family ?? null, to, cc, template, period, pdfBuffer });
+
       try {
         const { messageId, email } = await sendInvoiceEmail({
           invoice,
           family: family ?? null,
           to,
           cc,
-          periodLabel: body.periodLabel ?? null,
+          template,
+          period,
           pdfBuffer,
         });
 
@@ -450,7 +516,7 @@ export async function registerRoutes(
           ccAddresses: cc,
           replyTo: null,
           fromAddress: null,
-          subject: `Excel Aquatics ${invoice.invoiceNumber}`,
+          subject: built.subject,
           status: "failed",
           providerMessageId: null,
           errorMessage: sendErr.message?.slice(0, 500) || "Unknown error",
