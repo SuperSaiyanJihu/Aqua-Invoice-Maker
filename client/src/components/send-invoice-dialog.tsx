@@ -32,7 +32,7 @@ interface SendInvoiceDialogProps {
   defaultTo: string[];
   defaultCc: string[];
   billingPeriodId?: number | null;
-  onSent?: () => void;
+  onSent?: (info: { to: string[]; cc: string[] }) => void;
 }
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -90,8 +90,8 @@ export function SendInvoiceDialog({
       queryClient.invalidateQueries({ queryKey: [`/api/invoices/${invoiceId}/emails`] });
       const recips = [...(data.to || []), ...(data.cc || [])].join(", ");
       toast({ title: "Email sent", description: `Sent to ${recips}` });
-      onSent?.();
       onOpenChange(false);
+      onSent?.({ to: data.to || [], cc: data.cc || [] });
     },
     onError: (err: Error) => {
       toast({ title: "Failed to send", description: err.message, variant: "destructive" });
