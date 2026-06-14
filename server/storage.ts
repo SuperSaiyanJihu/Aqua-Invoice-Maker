@@ -4,7 +4,9 @@ import {
   type BillingPeriod, type InsertBillingPeriod, billingPeriods,
   type EmailLog, type InsertEmailLog, emailLogs,
   type SelectUser, users,
+  emailTemplates,
 } from "@shared/schema";
+import { DEFAULT_EMAIL_TEMPLATE, type EmailTemplate } from "@shared/email-template";
 import bcrypt from "bcryptjs";
 import { db } from "./db";
 import { eq, desc, and, sql } from "drizzle-orm";
@@ -35,6 +37,7 @@ export interface IStorage {
   deleteFamily(id: number): Promise<boolean>;
 
   // Billing Periods
+  getBillingPeriod(id: number): Promise<BillingPeriod | undefined>;
   getBillingPeriods(familyId: number): Promise<BillingPeriod[]>;
   getAllPendingPeriods(): Promise<(BillingPeriod & { familyName: string; emailAddresses: string[]; brokerEmails: string[]; billingType: string; ratePerClass: string | null; monthlyTotal: string | null; studentNames: string; classDayTime: string; documentType: string })[]>;
   getArchivedPeriods(): Promise<(BillingPeriod & { familyName: string; emailAddresses: string[]; brokerEmails: string[]; billingType: string; ratePerClass: string | null; monthlyTotal: string | null; studentNames: string; classDayTime: string; documentType: string })[]>;
@@ -46,6 +49,10 @@ export interface IStorage {
   // Email logs
   createEmailLog(log: InsertEmailLog): Promise<EmailLog>;
   getEmailLogsForInvoice(invoiceId: number): Promise<EmailLog[]>;
+
+  // Email template (single global record)
+  getEmailTemplate(): Promise<EmailTemplate>;
+  updateEmailTemplate(data: EmailTemplate): Promise<EmailTemplate>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -145,6 +152,29 @@ export class DatabaseStorage implements IStorage {
       .orderBy(desc(emailLogs.createdAt));
   }
 
+  // --- Email template (single global record) ---
+  async getEmailTemplate(): Promise<EmailTemplate> {
+    const [row] = await db.select().from(emailTemplates).orderBy(emailTemplates.id).limit(1);
+    if (row) return { subject: row.subject, body: row.body };
+    // Seed the default lazily on first access.
+    const [created] = await db.insert(emailTemplates).values(DEFAULT_EMAIL_TEMPLATE).returning();
+    return { subject: created.subject, body: created.body };
+  }
+
+  async updateEmailTemplate(data: EmailTemplate): Promise<EmailTemplate> {
+    const [existing] = await db.select({ id: emailTemplates.id }).from(emailTemplates).orderBy(emailTemplates.id).limit(1);
+    if (!existing) {
+      const [created] = await db.insert(emailTemplates).values(data).returning();
+      return { subject: created.subject, body: created.body };
+    }
+    const [updated] = await db
+      .update(emailTemplates)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(emailTemplates.id, existing.id))
+      .returning();
+    return { subject: updated.subject, body: updated.body };
+  }
+
   // --- Families ---
   async getFamilies(): Promise<Family[]> {
     return await db.select().from(families).orderBy(families.familyName);
@@ -175,6 +205,11 @@ export class DatabaseStorage implements IStorage {
   }
 
   // --- Billing Periods ---
+  async getBillingPeriod(id: number): Promise<BillingPeriod | undefined> {
+    const [period] = await db.select().from(billingPeriods).where(eq(billingPeriods.id, id));
+    return period;
+  }
+
   async getBillingPeriods(familyId: number): Promise<BillingPeriod[]> {
     return await db
       .select()

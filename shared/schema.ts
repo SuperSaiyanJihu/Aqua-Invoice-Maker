@@ -107,3 +107,15 @@ export type Invoice = typeof invoices.$inferSelect;
 export const insertEmailLogSchema = createInsertSchema(emailLogs).omit({ id: true, createdAt: true });
 export type InsertEmailLog = z.infer<typeof insertEmailLogSchema>;
 export type EmailLog = typeof emailLogs.$inferSelect;
+
+// Single-row table holding the editable email template (subject + body).
+export const emailTemplates = pgTable("email_templates", {
+  id: serial("id").primaryKey(),
+  subject: text("subject").notNull(),
+  body: text("body").notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const insertEmailTemplateSchema = createInsertSchema(emailTemplates).omit({ id: true, updatedAt: true });
+export type InsertEmailTemplate = z.infer<typeof insertEmailTemplateSchema>;
+export type EmailTemplateRow = typeof emailTemplates.$inferSelect;

@@ -13,6 +13,9 @@
  * prints the Resend message id.
  */
 import { buildInvoiceEmail, sendInvoiceEmail, splitStudentName } from "../server/email";
+import { DEFAULT_EMAIL_TEMPLATE } from "../shared/email-template";
+
+const SAMPLE_PERIOD = { month: "June", year: "2026", monthYear: "June 2026" };
 import { generateInvoicePdf } from "../server/pdf";
 import type { Invoice, Family } from "../shared/schema";
 
@@ -92,7 +95,8 @@ async function main() {
     family: sampleFamily,
     to: sampleFamily.emailAddresses,
     cc: sampleFamily.brokerEmails,
-    periodLabel: "June 2026",
+    template: DEFAULT_EMAIL_TEMPLATE,
+    period: SAMPLE_PERIOD,
     pdfBuffer,
   });
 
@@ -132,7 +136,8 @@ async function main() {
       family: sampleFamily,
       to: [toArg],
       cc: [],
-      periodLabel: "June 2026",
+      template: DEFAULT_EMAIL_TEMPLATE,
+      period: SAMPLE_PERIOD,
       pdfBuffer,
     });
     check("Resend returned a message id", !!result.messageId);
