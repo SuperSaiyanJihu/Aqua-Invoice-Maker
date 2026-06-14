@@ -17,6 +17,15 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { FileDown, X, CalendarDays, DollarSign, User, Clock, CalendarRange, FileText, Receipt, Users, Send, CheckCircle2 } from "lucide-react";
 import { format } from "date-fns";
 import { SendInvoiceDialog } from "./send-invoice-dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 const MONTHS = [
   "January", "February", "March", "April", "May", "June",
@@ -31,9 +40,10 @@ interface InvoiceFormProps {
   selectedFamilyId?: number | null;
   selectedBillingPeriodId?: number | null;
   onFamilyUsed?: () => void;
+  onNavigateToDashboard?: () => void;
 }
 
-export function InvoiceForm({ selectedFamilyId, selectedBillingPeriodId, onFamilyUsed }: InvoiceFormProps) {
+export function InvoiceForm({ selectedFamilyId, selectedBillingPeriodId, onFamilyUsed, onNavigateToDashboard }: InvoiceFormProps) {
   const { toast } = useToast();
   const [invoiceType, setInvoiceType] = useState<"attendance" | "monthly">("attendance");
   const [documentType, setDocumentType] = useState<"invoice" | "receipt">("invoice");
@@ -61,6 +71,13 @@ export function InvoiceForm({ selectedFamilyId, selectedBillingPeriodId, onFamil
     defaultCc: string[];
   } | null>(null);
   const [sendOpen, setSendOpen] = useState(false);
+
+  // After a successful email send: confirm the action, then return to the dashboard.
+  const [sentConfirm, setSentConfirm] = useState<{
+    docLabel: string;
+    studentName: string;
+    recipients: string[];
+  } | null>(null);
 
   // Family selection
   const [familyId, setFamilyId] = useState<number | null>(null);
@@ -247,6 +264,23 @@ export function InvoiceForm({ selectedFamilyId, selectedBillingPeriodId, onFamil
       if (prev) URL.revokeObjectURL(prev.blobUrl);
       return null;
     });
+  };
+
+  // Triggered when the send dialog reports a successful email send.
+  const handleSent = (info: { to: string[]; cc: string[] }) => {
+    if (!generatedResult) return;
+    setSentConfirm({
+      docLabel: generatedResult.documentType === "receipt" ? "Receipt" : "Invoice",
+      studentName: generatedResult.studentName,
+      recipients: [...info.to, ...info.cc],
+    });
+  };
+
+  // User acknowledged the "email sent" confirmation: clear the form and go to the dashboard.
+  const handleSentConfirmClose = () => {
+    setSentConfirm(null);
+    handleReset();
+    onNavigateToDashboard?.();
   };
 
   const handleReset = () => {
@@ -757,7 +791,27 @@ export function InvoiceForm({ selectedFamilyId, selectedBillingPeriodId, onFamil
         defaultTo={generatedResult?.defaultTo ?? []}
         defaultCc={generatedResult?.defaultCc ?? []}
         billingPeriodId={billingPeriodId}
+        onSent={handleSent}
       />
+
+      <AlertDialog open={sentConfirm !== null} onOpenChange={(o) => !o && handleSentConfirmClose()}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2">
+              <CheckCircle2 className="h-5 w-5 text-green-600" />
+              {sentConfirm?.docLabel} sent
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {sentConfirm
+                ? `The ${sentConfirm.docLabel.toLowerCase()} for ${sentConfirm.studentName} was emailed to ${sentConfirm.recipients.join(", ")}.`
+                : ""}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogAction>Back to Dashboard</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

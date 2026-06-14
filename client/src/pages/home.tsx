@@ -110,6 +110,7 @@ export default function Home() {
               selectedFamilyId={selectedFamilyId}
               selectedBillingPeriodId={selectedBillingPeriodId}
               onFamilyUsed={handleFamilyUsed}
+              onNavigateToDashboard={() => setActiveTab("dashboard")}
             />
           </TabsContent>
 
