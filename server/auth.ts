@@ -37,6 +37,8 @@ export async function setupAuth(app: Express) {
 
   // Seed admin user on startup
   await storage.ensureAdminUser();
+  // Guarantee the email_templates table exists (deploy-time push is unreliable).
+  await storage.ensureEmailTemplatesTable();
   // One-shot migration: archive pre-existing sent periods so they don't flood the dashboard.
   await storage.backfillArchivedPeriods();
 
