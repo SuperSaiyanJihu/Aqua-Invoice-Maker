@@ -51,6 +51,7 @@ export interface IStorage {
   getEmailLogsForInvoice(invoiceId: number): Promise<EmailLog[]>;
 
   // Email template (single global record)
+  ensureEmailTemplatesTable(): Promise<void>;
   getEmailTemplate(): Promise<EmailTemplate>;
   updateEmailTemplate(data: EmailTemplate): Promise<EmailTemplate>;
 }
@@ -153,6 +154,20 @@ export class DatabaseStorage implements IStorage {
   }
 
   // --- Email template (single global record) ---
+  // Ensure the email_templates table exists. Deploys rely on `drizzle-kit push`
+  // to sync the schema, which has proven unreliable for this table. Idempotent
+  // and safe to run on every boot (mirrors the session/admin-user bootstrap).
+  async ensureEmailTemplatesTable(): Promise<void> {
+    await db.execute(sql`
+      CREATE TABLE IF NOT EXISTS email_templates (
+        id serial PRIMARY KEY,
+        subject text NOT NULL,
+        body text NOT NULL,
+        updated_at timestamp DEFAULT now() NOT NULL
+      )
+    `);
+  }
+
   async getEmailTemplate(): Promise<EmailTemplate> {
     const [row] = await db.select().from(emailTemplates).orderBy(emailTemplates.id).limit(1);
     if (row) return { subject: row.subject, body: row.body };
