@@ -1,9 +1,12 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 
-interface User {
+export interface User {
   username: string;
+  email: string;
   isAdmin: boolean;
+  isSuperAdmin: boolean;
+  authMethod: "clerk" | "google";
   mustChangePin: boolean;
 }
 
@@ -27,16 +30,6 @@ export function useAuth() {
     retry: false,
   });
 
-  const loginMutation = useMutation({
-    mutationFn: async (credentials: { username: string; password: string }) => {
-      const res = await apiRequest("POST", "/api/login", credentials);
-      return res.json() as Promise<AuthResponse>;
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/user"] });
-    },
-  });
-
   const logoutMutation = useMutation({
     mutationFn: async () => {
       await apiRequest("POST", "/api/logout");
@@ -50,9 +43,7 @@ export function useAuth() {
     user: data?.user ?? null,
     isLoading,
     isAuthenticated: !!data?.user,
-    login: loginMutation.mutateAsync,
-    loginError: loginMutation.error,
-    isLoggingIn: loginMutation.isPending,
+    refresh: () => queryClient.invalidateQueries({ queryKey: ["/api/user"] }),
     logout: logoutMutation.mutateAsync,
     isLoggingOut: logoutMutation.isPending,
   };
