@@ -10,7 +10,7 @@ declare global {
 function normalizeKey(value: unknown): string | undefined {
   if (typeof value !== "string") return undefined;
   const key = value.trim();
-  return /^(?:pk_test_|pk_live_)[A-Za-z0-9_=$-]{32,}$/.test(key)
+  return /^(?:pk_test_|pk_live_)[A-Za-z0-9_=$-]{20,}$/.test(key)
     ? key
     : undefined;
 }
