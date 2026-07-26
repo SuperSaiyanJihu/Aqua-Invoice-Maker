@@ -3,6 +3,7 @@ import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
 import { setupAuth } from "./auth";
 import { createServer } from "http";
+import { isGoogleBreakGlassEnabled } from "./googleAuth";
 
 const app = express();
 const httpServer = createServer(app);
@@ -22,6 +23,17 @@ app.use(
 );
 
 app.use(express.urlencoded({ extended: false }));
+
+app.get("/runtime-config.js", (_req, res) => {
+  const config = JSON.stringify({
+    clerkPublishableKey: process.env.VITE_CLERK_PUBLISHABLE_KEY?.trim() || null,
+    googleBreakGlassEnabled: isGoogleBreakGlassEnabled(),
+  }).replace(/</g, "\\u003c");
+  res
+    .type("application/javascript")
+    .set("Cache-Control", "no-store")
+    .send(`window.__AQUA_INVOICE_CONFIG__ = ${config};`);
+});
 
 export function log(message: string, source = "express") {
   const formattedTime = new Date().toLocaleTimeString("en-US", {

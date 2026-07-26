@@ -2,266 +2,348 @@ import type { Express, Request, Response, NextFunction } from "express";
 import session from "express-session";
 import connectPgSimple from "connect-pg-simple";
 import bcrypt from "bcryptjs";
+import { randomBytes, timingSafeEqual } from "crypto";
 import { storage } from "./storage";
 import { pool } from "./db";
 import { z } from "zod";
+import {
+  inviteEmailToClerk,
+  isClerkConfigured,
+  verifyClerkBearerToken,
+} from "./clerkAuth";
+import {
+  exchangeGoogleCode,
+  googleAuthUrl,
+  isGoogleBreakGlassEnabled,
+  isGoogleOAuthConfigured,
+} from "./googleAuth";
 
-const DEFAULT_PIN = "0000";
-const pinSchema = z.string().regex(/^\d{4}$/, "PIN must be exactly 4 digits");
+const emailSchema = z.string().trim().email().transform((email) => email.toLowerCase());
+
+function superAdminEmail(): string {
+  return (process.env.SUPER_ADMIN_EMAIL || "info@goswimexcel.com")
+    .trim()
+    .toLowerCase();
+}
+
+function safeEqual(left: string, right: string): boolean {
+  const a = Buffer.from(left);
+  const b = Buffer.from(right);
+  return a.length === b.length && timingSafeEqual(a, b);
+}
+
+function sessionUser(req: Request) {
+  return {
+    username: req.session.username,
+    email: req.session.username,
+    isAdmin: req.session.isAdmin ?? false,
+    isSuperAdmin: req.session.isSuperAdmin ?? false,
+    authMethod: req.session.authMethod,
+    mustChangePin: false,
+  };
+}
+
+async function establishSession(
+  req: Request,
+  identity: {
+    email: string;
+    userId?: number;
+    isAdmin: boolean;
+    isSuperAdmin: boolean;
+    authMethod: "clerk" | "google";
+  },
+) {
+  await new Promise<void>((resolve, reject) => {
+    req.session.regenerate((error) => (error ? reject(error) : resolve()));
+  });
+  req.session.authenticated = true;
+  req.session.username = identity.email;
+  req.session.userId = identity.userId;
+  req.session.isAdmin = identity.isAdmin;
+  req.session.isSuperAdmin = identity.isSuperAdmin;
+  req.session.authMethod = identity.authMethod;
+  req.session.mustChangePin = false;
+}
 
 export async function setupAuth(app: Express) {
   const isProduction = process.env.NODE_ENV === "production";
-
-  // Persist sessions in Postgres so logins survive server restarts/redeploys.
-  // The `session` table is created automatically if it doesn't exist.
-  const PgStore = connectPgSimple(session);
-
-  const sessionSettings: session.SessionOptions = {
-    secret: process.env.SESSION_SECRET || "aqua-invoice-maker-secret-key",
-    resave: false,
-    saveUninitialized: false,
-    store: new PgStore({ pool, createTableIfMissing: true }),
-    cookie: {
-      maxAge: 24 * 60 * 60 * 1000, // 24 hours
-      httpOnly: true,
-      sameSite: "lax",
-      secure: isProduction,
-    },
-  };
-
   if (isProduction) {
+    if (!process.env.SESSION_SECRET || process.env.SESSION_SECRET.length < 32) {
+      throw new Error("SESSION_SECRET must be at least 32 characters in production");
+    }
+    if (!isClerkConfigured() || !process.env.VITE_CLERK_PUBLISHABLE_KEY?.trim()) {
+      throw new Error("CLERK_SECRET_KEY and VITE_CLERK_PUBLISHABLE_KEY are required");
+    }
+    if (
+      isGoogleBreakGlassEnabled() &&
+      (!isGoogleOAuthConfigured() || !process.env.APP_URL?.trim())
+    ) {
+      throw new Error(
+        "Google recovery requires GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, and APP_URL",
+      );
+    }
     app.set("trust proxy", 1);
   }
 
-  app.use(session(sessionSettings));
+  const PgStore = connectPgSimple(session);
+  app.use(
+    session({
+      secret: process.env.SESSION_SECRET || "local-development-session-secret-only",
+      resave: false,
+      saveUninitialized: false,
+      store: new PgStore({ pool, createTableIfMissing: true }),
+      cookie: {
+        maxAge: 8 * 60 * 60 * 1000,
+        httpOnly: true,
+        sameSite: "lax",
+        secure: isProduction,
+      },
+    }),
+  );
 
-  // Seed admin user on startup
-  await storage.ensureAdminUser();
-  // Guarantee the email_templates table exists (deploy-time push is unreliable).
   await storage.ensureEmailTemplatesTable();
-  // One-shot migration: archive pre-existing sent periods so they don't flood the dashboard.
   await storage.backfillArchivedPeriods();
 
-  // --- Auth endpoints ---
+  app.post("/api/auth/clerk", async (req: Request, res: Response) => {
+    try {
+      const header = req.headers.authorization;
+      if (!header?.startsWith("Bearer ")) {
+        return res.status(401).json({ message: "Missing Clerk token" });
+      }
 
-  app.post("/api/login", async (req: Request, res: Response) => {
-    const { username, password } = req.body;
+      const identity = await verifyClerkBearerToken(header.slice(7));
+      const isSuperAdmin = identity.email === superAdminEmail();
+      const user = isSuperAdmin ? undefined : await storage.getUser(identity.email);
+      if (!isSuperAdmin && !user) {
+        return res.status(403).json({
+          message: "Your email has not been granted access to Invoice Creator.",
+        });
+      }
 
-    if (!username || !password) {
-      return res.status(400).json({ message: "Username and PIN are required" });
+      await establishSession(req, {
+        email: identity.email,
+        userId: user?.id,
+        isAdmin: isSuperAdmin || Boolean(user?.isAdmin),
+        isSuperAdmin,
+        authMethod: "clerk",
+      });
+      return res.json({ message: "Login successful", user: sessionUser(req) });
+    } catch (error: any) {
+      console.error("[AUTH] Clerk sign-in failed:", error?.message || error);
+      return res.status(401).json({ message: "Clerk sign-in could not be verified" });
     }
-
-    const user = await storage.getUser(username);
-    if (!user) {
-      return res.status(401).json({ message: "Invalid username or PIN" });
-    }
-
-    const valid = await bcrypt.compare(password, user.passwordHash);
-    if (!valid) {
-      return res.status(401).json({ message: "Invalid username or PIN" });
-    }
-
-    req.session.authenticated = true;
-    req.session.username = user.username;
-    req.session.userId = user.id;
-    req.session.isAdmin = user.isAdmin;
-    req.session.mustChangePin = user.mustChangePin;
-    return res.json({
-      message: "Login successful",
-      user: { username: user.username, isAdmin: user.isAdmin, mustChangePin: user.mustChangePin },
-    });
   });
 
-  app.post("/api/logout", (req: Request, res: Response) => {
-    req.session.destroy((err) => {
-      if (err) {
-        return res.status(500).json({ message: "Logout failed" });
+  app.get("/api/auth/google", (req, res) => {
+    if (!isGoogleBreakGlassEnabled() || !isGoogleOAuthConfigured()) {
+      return res.status(404).json({ message: "Google recovery is not enabled" });
+    }
+    const state = randomBytes(32).toString("hex");
+    req.session.googleOAuthState = state;
+    return res.redirect(googleAuthUrl(state));
+  });
+
+  app.get("/api/auth/google/callback", async (req, res) => {
+    if (!isGoogleBreakGlassEnabled() || !isGoogleOAuthConfigured()) {
+      return res.redirect("/?error=auth_failed");
+    }
+    try {
+      const code = typeof req.query.code === "string" ? req.query.code : "";
+      const state = typeof req.query.state === "string" ? req.query.state : "";
+      const expected = req.session.googleOAuthState || "";
+      delete req.session.googleOAuthState;
+      if (!code || !state || !expected || !safeEqual(state, expected)) {
+        return res.redirect("/?error=auth_failed");
       }
+
+      const identity = await exchangeGoogleCode(code);
+      if (!identity.emailVerified || identity.email !== superAdminEmail()) {
+        return res.redirect("/?error=unauthorized");
+      }
+      await establishSession(req, {
+        email: identity.email,
+        isAdmin: true,
+        isSuperAdmin: true,
+        authMethod: "google",
+      });
+      return res.redirect("/");
+    } catch (error: any) {
+      console.error("[AUTH] Google recovery failed:", error?.message || error);
+      return res.redirect("/?error=auth_failed");
+    }
+  });
+
+  app.post("/api/logout", (req, res) => {
+    req.session.destroy((error) => {
+      if (error) return res.status(500).json({ message: "Logout failed" });
       res.clearCookie("connect.sid");
       return res.json({ message: "Logged out successfully" });
     });
   });
 
-  app.get("/api/user", (req: Request, res: Response) => {
-    if (req.session.authenticated) {
-      return res.json({
-        user: {
-          username: req.session.username,
-          isAdmin: req.session.isAdmin,
-          mustChangePin: req.session.mustChangePin ?? false,
-        },
-      });
+  app.get("/api/user", (req, res) => {
+    if (!req.session.authenticated) {
+      return res.status(401).json({ message: "Not authenticated" });
     }
-    return res.status(401).json({ message: "Not authenticated" });
+    return res.json({ user: sessionUser(req) });
   });
 
-  // Any authenticated user can change their own PIN
-  app.post("/api/change-pin", requireAuth, async (req: Request, res: Response) => {
-    try {
-      const { newPin } = z.object({ newPin: pinSchema }).parse(req.body);
-      if (req.session.userId === undefined) {
-        return res.status(401).json({ message: "Authentication required" });
-      }
-      const hash = await bcrypt.hash(newPin, 10);
-      const user = await storage.updateUser(req.session.userId, { passwordHash: hash, mustChangePin: false });
-      if (!user) return res.status(404).json({ message: "User not found" });
-      req.session.mustChangePin = false;
-      return res.json({ message: "PIN changed successfully" });
-    } catch (err: any) {
-      if (err.name === "ZodError") {
-        return res.status(400).json({ message: err.errors[0].message });
-      }
-      return res.status(500).json({ message: err.message });
-    }
-  });
-
-  // --- Admin user management routes ---
+  // Retired explicitly so old bookmarked PIN clients cannot silently downgrade auth.
+  app.post("/api/login", (_req, res) =>
+    res.status(410).json({ message: "PIN login has been replaced by Clerk SSO" }),
+  );
+  app.post("/api/change-pin", (_req, res) =>
+    res.status(410).json({ message: "PIN login has been replaced by Clerk SSO" }),
+  );
 
   app.use("/api/admin", requireAuth, requireAdmin);
 
   const createUserSchema = z.object({
-    username: z.string().min(1).max(50),
+    email: emailSchema,
     isAdmin: z.boolean().default(false),
   });
-
   const updateUserSchema = z.object({
-    username: z.string().min(1).max(50).optional(),
+    email: emailSchema.optional(),
     isAdmin: z.boolean().optional(),
   });
 
-  app.get("/api/admin/users", async (_req: Request, res: Response) => {
+  app.get("/api/admin/users", async (_req, res) => {
     const users = await storage.getAllUsers();
-    const sanitized = users.map(({ passwordHash, ...rest }) => rest);
-    res.json(sanitized);
+    const sanitized = users
+      .filter((user) => z.string().email().safeParse(user.username).success)
+      .filter((user) => user.username.toLowerCase() !== superAdminEmail())
+      .map(({ passwordHash, ...user }) => ({
+        ...user,
+        email: user.username,
+        isSuperAdmin: false,
+      }));
+    res.json([
+      {
+        id: 0,
+        username: superAdminEmail(),
+        email: superAdminEmail(),
+        isAdmin: true,
+        isSuperAdmin: true,
+        mustChangePin: false,
+        createdAt: new Date(0).toISOString(),
+        updatedAt: new Date(0).toISOString(),
+      },
+      ...sanitized,
+    ]);
   });
 
-  app.post("/api/admin/users", async (req: Request, res: Response) => {
+  app.post("/api/admin/users", async (req, res) => {
     try {
       const data = createUserSchema.parse(req.body);
-
-      const existing = await storage.getUser(data.username);
-      if (existing) {
-        return res.status(400).json({ message: "Username already exists" });
+      if (data.email === superAdminEmail()) {
+        return res.status(400).json({ message: "The superadmin already has permanent access" });
+      }
+      if (await storage.getUser(data.email)) {
+        return res.status(409).json({ message: "That email already has access" });
       }
 
-      const hash = await bcrypt.hash(DEFAULT_PIN, 10);
-      const user = await storage.createUser(data.username, hash, data.isAdmin, true);
+      const invitation = await inviteEmailToClerk(data.email);
+      if (invitation.error && !invitation.alreadyExists) {
+        return res.status(502).json({
+          message: `Clerk invitation failed: ${invitation.error}`,
+        });
+      }
+
+      const unusableHash = await bcrypt.hash(
+        `clerk-only:${randomBytes(32).toString("hex")}`,
+        10,
+      );
+      const user = await storage.createUser(data.email, unusableHash, data.isAdmin, false);
       const { passwordHash, ...sanitized } = user;
-      res.status(201).json(sanitized);
-    } catch (err: any) {
-      if (err.name === "ZodError") {
-        const messages = err.errors.map((e: any) => e.message).join(", ");
-        return res.status(400).json({ message: messages });
+      return res.status(201).json({
+        ...sanitized,
+        email: user.username,
+        invitation,
+      });
+    } catch (error: any) {
+      if (error.name === "ZodError") {
+        return res.status(400).json({ message: error.errors[0].message });
       }
-      res.status(500).json({ message: err.message });
+      return res.status(500).json({ message: error.message });
     }
   });
 
-  app.put("/api/admin/users/:id", async (req: Request, res: Response) => {
+  app.put("/api/admin/users/:id", async (req, res) => {
     try {
-      const id = parseInt(req.params.id as string);
-      if (isNaN(id)) return res.status(400).json({ message: "Invalid ID" });
+      const id = Number(req.params.id);
+      if (!Number.isSafeInteger(id)) return res.status(400).json({ message: "Invalid ID" });
+      const target = await storage.getUserById(id);
+      if (!target) return res.status(404).json({ message: "User not found" });
+      if (target.username.toLowerCase() === superAdminEmail()) {
+        return res.status(403).json({ message: "The superadmin account cannot be changed" });
+      }
 
       const data = updateUserSchema.parse(req.body);
-
-      if (data.isAdmin === false) {
-        const targetUser = await storage.getUserById(id);
-        if (targetUser?.isAdmin) {
-          const adminCount = await storage.getAdminCount();
-          if (adminCount <= 1) {
-            return res.status(400).json({ message: "Cannot remove admin role from the last admin" });
-          }
+      if (data.email && data.email !== target.username) {
+        if (data.email === superAdminEmail()) {
+          return res.status(400).json({ message: "That email is reserved for the superadmin" });
+        }
+        if (await storage.getUser(data.email)) {
+          return res.status(409).json({ message: "That email already has access" });
+        }
+        const invitation = await inviteEmailToClerk(data.email);
+        if (invitation.error && !invitation.alreadyExists) {
+          return res.status(502).json({ message: `Clerk invitation failed: ${invitation.error}` });
         }
       }
 
-      if (data.username) {
-        const existing = await storage.getUser(data.username);
-        if (existing && existing.id !== id) {
-          return res.status(400).json({ message: "Username already exists" });
-        }
-      }
-
-      const updates: { username?: string; isAdmin?: boolean } = {};
-      if (data.username) updates.username = data.username;
-      if (data.isAdmin !== undefined) updates.isAdmin = data.isAdmin;
-
-      const user = await storage.updateUser(id, updates);
+      const user = await storage.updateUser(id, {
+        username: data.email,
+        isAdmin: data.isAdmin,
+      });
       if (!user) return res.status(404).json({ message: "User not found" });
-
-      if (req.session.userId === id) {
-        if (data.username) req.session.username = data.username;
-        if (data.isAdmin !== undefined) req.session.isAdmin = data.isAdmin;
-      }
-
       const { passwordHash, ...sanitized } = user;
-      res.json(sanitized);
-    } catch (err: any) {
-      if (err.name === "ZodError") {
-        const messages = err.errors.map((e: any) => e.message).join(", ");
-        return res.status(400).json({ message: messages });
+      return res.json({ ...sanitized, email: user.username });
+    } catch (error: any) {
+      if (error.name === "ZodError") {
+        return res.status(400).json({ message: error.errors[0].message });
       }
-      res.status(500).json({ message: err.message });
+      return res.status(500).json({ message: error.message });
     }
   });
 
-  // Reset a user's PIN back to 0000 and force change on next login
-  app.post("/api/admin/users/:id/reset-pin", async (req: Request, res: Response) => {
-    const id = parseInt(req.params.id as string);
-    if (isNaN(id)) return res.status(400).json({ message: "Invalid ID" });
-
-    const targetUser = await storage.getUserById(id);
-    if (!targetUser) return res.status(404).json({ message: "User not found" });
-
-    const hash = await bcrypt.hash(DEFAULT_PIN, 10);
-    const user = await storage.updateUser(id, { passwordHash: hash, mustChangePin: true });
-    if (!user) return res.status(404).json({ message: "User not found" });
-
-    res.json({ message: "PIN reset to 0000" });
-  });
-
-  app.delete("/api/admin/users/:id", async (req: Request, res: Response) => {
-    const id = parseInt(req.params.id as string);
-    if (isNaN(id)) return res.status(400).json({ message: "Invalid ID" });
-
+  app.delete("/api/admin/users/:id", async (req, res) => {
+    const id = Number(req.params.id);
+    if (!Number.isSafeInteger(id)) return res.status(400).json({ message: "Invalid ID" });
+    const target = await storage.getUserById(id);
+    if (!target) return res.status(404).json({ message: "User not found" });
+    if (target.username.toLowerCase() === superAdminEmail()) {
+      return res.status(403).json({ message: "The superadmin account cannot be removed" });
+    }
     if (req.session.userId === id) {
-      return res.status(400).json({ message: "Cannot delete your own account" });
+      return res.status(400).json({ message: "You cannot remove your own access" });
     }
-
-    const targetUser = await storage.getUserById(id);
-    if (!targetUser) return res.status(404).json({ message: "User not found" });
-    if (targetUser.isAdmin) {
-      const adminCount = await storage.getAdminCount();
-      if (adminCount <= 1) {
-        return res.status(400).json({ message: "Cannot delete the last admin" });
-      }
+    if (!(await storage.deleteUser(id))) {
+      return res.status(404).json({ message: "User not found" });
     }
-
-    const deleted = await storage.deleteUser(id);
-    if (!deleted) return res.status(404).json({ message: "User not found" });
-    res.status(204).send();
+    return res.status(204).send();
   });
 }
 
 export function requireAuth(req: Request, res: Response, next: NextFunction) {
-  if (req.session.authenticated) {
-    return next();
-  }
+  if (req.session.authenticated) return next();
   return res.status(401).json({ message: "Authentication required" });
 }
 
 export function requireAdmin(req: Request, res: Response, next: NextFunction) {
-  if (req.session.isAdmin) {
-    return next();
-  }
+  if (req.session.isAdmin || req.session.isSuperAdmin) return next();
   return res.status(403).json({ message: "Admin access required" });
 }
 
 declare module "express-session" {
   interface SessionData {
-    authenticated: boolean;
-    username: string;
-    userId: number;
-    isAdmin: boolean;
-    mustChangePin: boolean;
+    authenticated?: boolean;
+    username?: string;
+    userId?: number;
+    isAdmin?: boolean;
+    isSuperAdmin?: boolean;
+    authMethod?: "clerk" | "google";
+    mustChangePin?: boolean;
+    googleOAuthState?: string;
   }
 }

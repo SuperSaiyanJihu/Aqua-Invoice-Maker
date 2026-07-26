@@ -11,6 +11,9 @@ Invoice management system for Excel Aquatics swimming school in Colonie, NY. Gen
 - **Document Creation**: Enter student name, class day/time, choose document type and billing type, fill in details, add comments, generate PDF
 - **PDF Generation**: Server-side PDF creation with pdfkit. Includes Excel Aquatics logo, student info, and type-specific content. Single-page enforced.
 - **Document History**: View past invoices/receipts (shows document type and billing type badges), re-download PDFs, delete records
+- **Excel Aquatics SSO**: Clerk sign-in shared with the other staff apps
+- **Controlled Access**: Admins authorize an email and Clerk invites new identities
+- **Protected Superadmin**: `info@goswimexcel.com` receives permanent superadmin access
 
 ## Architecture
 
@@ -25,6 +28,19 @@ Invoice management system for Excel Aquatics swimming school in Colonie, NY. Gen
 |----------------|----------|--------------------------------------|
 | `DATABASE_URL` | Yes      | PostgreSQL connection string         |
 | `PORT`         | No       | Server port (default: 5000)          |
+| `SESSION_SECRET` | Yes | Random value of at least 32 characters |
+| `CLERK_SECRET_KEY` | Yes | Secret key for the shared Clerk application |
+| `VITE_CLERK_PUBLISHABLE_KEY` | Yes | Publishable key from the same Clerk application |
+| `SUPER_ADMIN_EMAIL` | Yes | Permanent owner email (`info@goswimexcel.com`) |
+| `APP_URL` | Yes | Canonical deployed URL used for invitations and OAuth |
+| `ALLOW_GOOGLE_BREAK_GLASS` | No | Set `true` only to enable Google superadmin recovery |
+| `GOOGLE_CLIENT_ID` | Conditional | Required when Google recovery is enabled |
+| `GOOGLE_CLIENT_SECRET` | Conditional | Required when Google recovery is enabled |
+
+Clerk is the normal login path. Google OAuth is intentionally limited to the
+configured superadmin and should be enabled only as a monitored recovery route.
+Add users from **Users → Add User**. Existing Clerk identities are authorized
+immediately; new identities receive a Clerk invitation.
 
 ## Local Development
 
