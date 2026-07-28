@@ -3,7 +3,8 @@ import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
 import { setupAuth } from "./auth";
 import { createServer } from "http";
-import { isGoogleBreakGlassEnabled } from "./googleAuth";
+import { isGoogleOAuthConfigured } from "./googleAuth";
+import { apiRateLimiter } from "./rateLimit";
 
 const app = express();
 const httpServer = createServer(app);
@@ -26,8 +27,7 @@ app.use(express.urlencoded({ extended: false }));
 
 app.get("/runtime-config.js", (_req, res) => {
   const config = JSON.stringify({
-    clerkPublishableKey: process.env.VITE_CLERK_PUBLISHABLE_KEY?.trim() || null,
-    googleBreakGlassEnabled: isGoogleBreakGlassEnabled(),
+    googleAuthEnabled: isGoogleOAuthConfigured(),
   }).replace(/</g, "\\u003c");
   res
     .type("application/javascript")
@@ -76,6 +76,9 @@ app.use((req, res, next) => {
   app.get("/health", (_req, res) => {
     res.status(200).json({ status: "ok" });
   });
+
+  // Registered before setupAuth so the pre-auth OAuth endpoints are throttled too.
+  app.use("/api/", apiRateLimiter);
 
   await setupAuth(app);
   await registerRoutes(httpServer, app);

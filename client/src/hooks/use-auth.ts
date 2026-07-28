@@ -6,7 +6,7 @@ export interface User {
   email: string;
   isAdmin: boolean;
   isSuperAdmin: boolean;
-  authMethod: "clerk" | "google";
+  authMethod: "google";
   mustChangePin: boolean;
 }
 

@@ -7,14 +7,8 @@ import { storage } from "./storage";
 import { pool } from "./db";
 import { z } from "zod";
 import {
-  inviteEmailToClerk,
-  isClerkConfigured,
-  verifyClerkBearerToken,
-} from "./clerkAuth";
-import {
   exchangeGoogleCode,
   googleAuthUrl,
-  isGoogleBreakGlassEnabled,
   isGoogleOAuthConfigured,
 } from "./googleAuth";
 
@@ -43,6 +37,13 @@ function sessionUser(req: Request) {
   };
 }
 
+// connect-pg-simple's default table; sessions store the lowercased email in sess->>'username'.
+async function revokeSessionsFor(email: string) {
+  await pool.query(`DELETE FROM "session" WHERE sess->>'username' = $1`, [
+    email.toLowerCase(),
+  ]);
+}
+
 async function establishSession(
   req: Request,
   identity: {
@@ -50,7 +51,7 @@ async function establishSession(
     userId?: number;
     isAdmin: boolean;
     isSuperAdmin: boolean;
-    authMethod: "clerk" | "google";
+    authMethod: "google";
   },
 ) {
   await new Promise<void>((resolve, reject) => {
@@ -71,16 +72,13 @@ export async function setupAuth(app: Express) {
     if (!process.env.SESSION_SECRET || process.env.SESSION_SECRET.length < 32) {
       throw new Error("SESSION_SECRET must be at least 32 characters in production");
     }
-    if (!isClerkConfigured() || !process.env.VITE_CLERK_PUBLISHABLE_KEY?.trim()) {
-      throw new Error("CLERK_SECRET_KEY and VITE_CLERK_PUBLISHABLE_KEY are required");
-    }
-    if (
-      isGoogleBreakGlassEnabled() &&
-      (!isGoogleOAuthConfigured() || !process.env.APP_URL?.trim())
-    ) {
+    if (!isGoogleOAuthConfigured() || !process.env.APP_URL?.trim()) {
       throw new Error(
-        "Google recovery requires GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, and APP_URL",
+        "GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, and APP_URL are required for Google sign-in",
       );
+    }
+    if (!process.env.SUPER_ADMIN_EMAIL?.trim()) {
+      throw new Error("SUPER_ADMIN_EMAIL is required in production");
     }
     app.set("trust proxy", 1);
   }
@@ -104,39 +102,9 @@ export async function setupAuth(app: Express) {
   await storage.ensureEmailTemplatesTable();
   await storage.backfillArchivedPeriods();
 
-  app.post("/api/auth/clerk", async (req: Request, res: Response) => {
-    try {
-      const header = req.headers.authorization;
-      if (!header?.startsWith("Bearer ")) {
-        return res.status(401).json({ message: "Missing Clerk token" });
-      }
-
-      const identity = await verifyClerkBearerToken(header.slice(7));
-      const isSuperAdmin = identity.email === superAdminEmail();
-      const user = isSuperAdmin ? undefined : await storage.getUser(identity.email);
-      if (!isSuperAdmin && !user) {
-        return res.status(403).json({
-          message: "Your email has not been granted access to Invoice Creator.",
-        });
-      }
-
-      await establishSession(req, {
-        email: identity.email,
-        userId: user?.id,
-        isAdmin: isSuperAdmin || Boolean(user?.isAdmin),
-        isSuperAdmin,
-        authMethod: "clerk",
-      });
-      return res.json({ message: "Login successful", user: sessionUser(req) });
-    } catch (error: any) {
-      console.error("[AUTH] Clerk sign-in failed:", error?.message || error);
-      return res.status(401).json({ message: "Clerk sign-in could not be verified" });
-    }
-  });
-
   app.get("/api/auth/google", (req, res) => {
-    if (!isGoogleBreakGlassEnabled() || !isGoogleOAuthConfigured()) {
-      return res.status(404).json({ message: "Google recovery is not enabled" });
+    if (!isGoogleOAuthConfigured()) {
+      return res.status(404).json({ message: "Google sign-in is not configured" });
     }
     const state = randomBytes(32).toString("hex");
     req.session.googleOAuthState = state;
@@ -144,7 +112,7 @@ export async function setupAuth(app: Express) {
   });
 
   app.get("/api/auth/google/callback", async (req, res) => {
-    if (!isGoogleBreakGlassEnabled() || !isGoogleOAuthConfigured()) {
+    if (!isGoogleOAuthConfigured()) {
       return res.redirect("/?error=auth_failed");
     }
     try {
@@ -157,18 +125,24 @@ export async function setupAuth(app: Express) {
       }
 
       const identity = await exchangeGoogleCode(code);
-      if (!identity.emailVerified || identity.email !== superAdminEmail()) {
+      if (!identity.emailVerified) {
+        return res.redirect("/?error=email_unverified");
+      }
+      const isSuperAdmin = identity.email === superAdminEmail();
+      const user = isSuperAdmin ? undefined : await storage.getUser(identity.email);
+      if (!isSuperAdmin && !user) {
         return res.redirect("/?error=unauthorized");
       }
       await establishSession(req, {
         email: identity.email,
-        isAdmin: true,
-        isSuperAdmin: true,
+        userId: user?.id,
+        isAdmin: isSuperAdmin || Boolean(user?.isAdmin),
+        isSuperAdmin,
         authMethod: "google",
       });
       return res.redirect("/");
     } catch (error: any) {
-      console.error("[AUTH] Google recovery failed:", error?.message || error);
+      console.error("[AUTH] Google sign-in failed:", error?.message || error);
       return res.redirect("/?error=auth_failed");
     }
   });
@@ -188,12 +162,15 @@ export async function setupAuth(app: Express) {
     return res.json({ user: sessionUser(req) });
   });
 
-  // Retired explicitly so old bookmarked PIN clients cannot silently downgrade auth.
+  // Retired explicitly so old bookmarked clients cannot silently downgrade auth.
   app.post("/api/login", (_req, res) =>
-    res.status(410).json({ message: "PIN login has been replaced by Clerk SSO" }),
+    res.status(410).json({ message: "PIN login has been replaced by Google sign-in" }),
   );
   app.post("/api/change-pin", (_req, res) =>
-    res.status(410).json({ message: "PIN login has been replaced by Clerk SSO" }),
+    res.status(410).json({ message: "PIN login has been replaced by Google sign-in" }),
+  );
+  app.post("/api/auth/clerk", (_req, res) =>
+    res.status(410).json({ message: "Clerk SSO has been replaced by Google sign-in" }),
   );
 
   app.use("/api/admin", requireAuth, requireAdmin);
@@ -242,24 +219,13 @@ export async function setupAuth(app: Express) {
         return res.status(409).json({ message: "That email already has access" });
       }
 
-      const invitation = await inviteEmailToClerk(data.email);
-      if (invitation.error && !invitation.alreadyExists) {
-        return res.status(502).json({
-          message: `Clerk invitation failed: ${invitation.error}`,
-        });
-      }
-
       const unusableHash = await bcrypt.hash(
-        `clerk-only:${randomBytes(32).toString("hex")}`,
+        `google-only:${randomBytes(32).toString("hex")}`,
         10,
       );
       const user = await storage.createUser(data.email, unusableHash, data.isAdmin, false);
       const { passwordHash, ...sanitized } = user;
-      return res.status(201).json({
-        ...sanitized,
-        email: user.username,
-        invitation,
-      });
+      return res.status(201).json({ ...sanitized, email: user.username });
     } catch (error: any) {
       if (error.name === "ZodError") {
         return res.status(400).json({ message: error.errors[0].message });
@@ -286,10 +252,6 @@ export async function setupAuth(app: Express) {
         if (await storage.getUser(data.email)) {
           return res.status(409).json({ message: "That email already has access" });
         }
-        const invitation = await inviteEmailToClerk(data.email);
-        if (invitation.error && !invitation.alreadyExists) {
-          return res.status(502).json({ message: `Clerk invitation failed: ${invitation.error}` });
-        }
       }
 
       const user = await storage.updateUser(id, {
@@ -297,6 +259,11 @@ export async function setupAuth(app: Express) {
         isAdmin: data.isAdmin,
       });
       if (!user) return res.status(404).json({ message: "User not found" });
+      const emailChanged = Boolean(data.email && data.email !== target.username);
+      const demoted = data.isAdmin !== undefined && data.isAdmin !== target.isAdmin;
+      if (emailChanged || demoted) {
+        await revokeSessionsFor(target.username);
+      }
       const { passwordHash, ...sanitized } = user;
       return res.json({ ...sanitized, email: user.username });
     } catch (error: any) {
@@ -321,6 +288,7 @@ export async function setupAuth(app: Express) {
     if (!(await storage.deleteUser(id))) {
       return res.status(404).json({ message: "User not found" });
     }
+    await revokeSessionsFor(target.username);
     return res.status(204).send();
   });
 }
@@ -342,7 +310,7 @@ declare module "express-session" {
     userId?: number;
     isAdmin?: boolean;
     isSuperAdmin?: boolean;
-    authMethod?: "clerk" | "google";
+    authMethod?: "google";
     mustChangePin?: boolean;
     googleOAuthState?: string;
   }
