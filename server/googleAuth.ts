@@ -3,12 +3,10 @@ import { OAuth2Client } from "google-auth-library";
 function appBaseUrl(): string {
   const value = process.env.APP_URL?.trim().replace(/\/$/, "");
   if (value) return value;
-  if (process.env.NODE_ENV !== "production") return "http://localhost:5000";
+  if (process.env.NODE_ENV !== "production") {
+    return `http://localhost:${process.env.PORT || 5000}`;
+  }
   throw new Error("APP_URL must be set in production for Google OAuth");
-}
-
-export function isGoogleBreakGlassEnabled(): boolean {
-  return process.env.ALLOW_GOOGLE_BREAK_GLASS === "true";
 }
 
 export function isGoogleOAuthConfigured(): boolean {

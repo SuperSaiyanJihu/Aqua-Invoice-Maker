@@ -12,8 +12,6 @@ const allowlist = [
   "express",
   "express-session",
   "nanoid",
-  "passport",
-  "passport-local",
   "pg",
   "ws",
   "zod",

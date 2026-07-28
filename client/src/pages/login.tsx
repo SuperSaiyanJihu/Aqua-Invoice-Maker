@@ -1,110 +1,50 @@
-import { useEffect, useRef, useState } from "react";
-import { SignIn, SignedIn, SignedOut, useAuth as useClerkAuth, useClerk } from "@clerk/clerk-react";
-import { AlertCircle, Shield } from "lucide-react";
+import { useEffect, useState } from "react";
+import { AlertCircle } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { useAuth } from "@/hooks/use-auth";
-import {
-  clerkPublishableKey,
-  googleBreakGlassEnabled,
-} from "@/lib/runtime-config";
+import { googleAuthEnabled } from "@/lib/runtime-config";
 import logoImg from "@assets/Logo_1772310414809.png";
 
-function ClerkBridge() {
-  const { isSignedIn, getToken } = useClerkAuth();
-  const { signOut } = useClerk();
-  const { refresh } = useAuth();
-  const attempted = useRef(false);
-  const [error, setError] = useState("");
-  const [bridging, setBridging] = useState(false);
-
-  useEffect(() => {
-    if (!isSignedIn || attempted.current) return;
-    attempted.current = true;
-    setBridging(true);
-    setError("");
-
-    (async () => {
-      try {
-        const token = await getToken();
-        if (!token) throw new Error("Clerk did not provide a session token");
-        const response = await fetch("/api/auth/clerk", {
-          method: "POST",
-          headers: { Authorization: `Bearer ${token}` },
-          credentials: "include",
-        });
-        const data = await response.json().catch(() => ({}));
-        if (!response.ok) {
-          throw new Error(data.message || "This account is not authorized");
-        }
-        await refresh();
-      } catch (bridgeError: any) {
-        setError(bridgeError?.message || "Sign-in could not be completed");
-        await signOut().catch(() => undefined);
-        attempted.current = false;
-      } finally {
-        setBridging(false);
-      }
-    })();
-  }, [getToken, isSignedIn, refresh, signOut]);
-
-  if (bridging) {
-    return (
-      <div className="py-8 text-center">
-        <div className="mx-auto h-8 w-8 animate-spin rounded-full border-b-2 border-primary" />
-        <p className="mt-3 text-sm text-muted-foreground">Connecting your account…</p>
-      </div>
-    );
-  }
-  if (error) {
-    return (
-      <Alert variant="destructive">
-        <AlertCircle className="h-4 w-4" />
-        <AlertDescription>{error}</AlertDescription>
-      </Alert>
-    );
-  }
-  return null;
-}
-
-function ClerkLogin() {
+function GoogleLogo() {
   return (
-    <>
-      <SignedOut>
-        <div className="flex justify-center">
-          <SignIn
-            routing="hash"
-            forceRedirectUrl="/"
-            signUpUrl={undefined}
-            appearance={{
-              elements: {
-                rootBox: "w-full",
-                card: "w-full bg-transparent shadow-none border-0",
-                headerTitle: "hidden",
-                headerSubtitle: "hidden",
-                footerAction: "hidden",
-              },
-            }}
-          />
-        </div>
-      </SignedOut>
-      <SignedIn>
-        <ClerkBridge />
-      </SignedIn>
-    </>
+    <svg className="h-4 w-4" viewBox="0 0 24 24" aria-hidden="true">
+      <path
+        fill="#4285F4"
+        d="M23.52 12.27c0-.85-.08-1.67-.22-2.45H12v4.63h6.46a5.52 5.52 0 0 1-2.4 3.62v3h3.88c2.26-2.09 3.58-5.17 3.58-8.8z"
+      />
+      <path
+        fill="#34A853"
+        d="M12 24c3.24 0 5.96-1.07 7.94-2.91l-3.88-3c-1.07.72-2.45 1.15-4.06 1.15-3.13 0-5.78-2.11-6.72-4.95H1.27v3.09A12 12 0 0 0 12 24z"
+      />
+      <path
+        fill="#FBBC05"
+        d="M5.28 14.29A7.21 7.21 0 0 1 4.9 12c0-.8.14-1.57.38-2.29V6.62H1.27a12 12 0 0 0 0 10.76l4.01-3.09z"
+      />
+      <path
+        fill="#EA4335"
+        d="M12 4.77c1.76 0 3.34.61 4.59 1.8l3.44-3.44A11.97 11.97 0 0 0 12 0 12 12 0 0 0 1.27 6.62l4.01 3.09C6.22 6.88 8.87 4.77 12 4.77z"
+      />
+    </svg>
   );
 }
 
 export default function Login() {
   const [oauthError, setOauthError] = useState("");
+  const [redirecting, setRedirecting] = useState(false);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     if (params.get("error") === "unauthorized") {
-      setOauthError("That Google account is not authorized as the superadmin.");
+      setOauthError(
+        "That Google account has not been granted access to Invoice Creator. Ask an administrator to add your email.",
+      );
+    } else if (params.get("error") === "email_unverified") {
+      setOauthError(
+        "Your Google account's email address is not verified with Google. Verify it in your Google account settings, then sign in again.",
+      );
     } else if (params.get("error") === "auth_failed") {
-      setOauthError("Google authentication failed. Please try again.");
+      setOauthError("Google sign-in failed. Please try again.");
     }
     if (params.has("error")) window.history.replaceState({}, "", "/");
   }, []);
@@ -118,7 +58,7 @@ export default function Login() {
           </div>
           <CardTitle className="text-xl">Excel Aquatics Invoice Creator</CardTitle>
           <p className="text-sm text-muted-foreground">
-            Sign in with your Excel Aquatics staff account
+            Sign in with your Excel Aquatics staff Google account
           </p>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -128,33 +68,29 @@ export default function Login() {
               <AlertDescription>{oauthError}</AlertDescription>
             </Alert>
           )}
-          {!clerkPublishableKey ? (
+          {googleAuthEnabled ? (
+            <Button
+              type="button"
+              variant="outline"
+              className="w-full gap-2"
+              disabled={redirecting}
+              onClick={() => {
+                setRedirecting(true);
+                window.location.href = "/api/auth/google";
+              }}
+              data-testid="button-google-signin"
+            >
+              <GoogleLogo />
+              {redirecting ? "Redirecting to Google…" : "Sign in with Google"}
+            </Button>
+          ) : (
             <Alert variant="destructive">
               <AlertCircle className="h-4 w-4" />
               <AlertDescription>
-                Clerk is not configured for this deployment.
+                Google sign-in is not configured for this deployment. Set
+                GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET.
               </AlertDescription>
             </Alert>
-          ) : (
-            <ClerkLogin />
-          )}
-          {googleBreakGlassEnabled && (
-            <div className="border-t pt-4">
-              <Button
-                type="button"
-                variant="outline"
-                className="w-full"
-                onClick={() => {
-                  window.location.href = "/api/auth/google";
-                }}
-              >
-                Continue with Google
-              </Button>
-              <p className="mt-2 flex items-center justify-center gap-1 text-xs text-muted-foreground">
-                <Shield className="h-3 w-3" />
-                Superadmin recovery access only
-              </p>
-            </div>
           )}
         </CardContent>
       </Card>

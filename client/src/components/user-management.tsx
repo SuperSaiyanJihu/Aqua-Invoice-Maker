@@ -65,15 +65,13 @@ export function UserManagement() {
       });
       return response.json();
     },
-    onSuccess: (data) => {
+    onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/admin/users"] });
       toast({
         title: editing ? "Access updated" : "User added",
         description: editing
           ? "The user's Invoice Creator permissions were updated."
-          : data.invitation?.invited
-            ? "Clerk sent an invitation to the user's email."
-            : "The user already has a Clerk account and can sign in now.",
+          : "They can now sign in with Google using that email.",
       });
       closeEditor();
     },
@@ -128,7 +126,7 @@ export function UserManagement() {
                 Invoice Creator Access
               </CardTitle>
               <p className="mt-1 text-sm text-muted-foreground">
-                Add an email to authorize its existing Clerk account or send a Clerk invitation.
+                Add an email to allow it to sign in with Google.
               </p>
             </div>
             <Button size="sm" onClick={openAdd}>
@@ -204,7 +202,7 @@ export function UserManagement() {
       <Dialog open={dialogOpen} onOpenChange={(open) => !open && closeEditor()}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>{editing ? "Edit User Access" : "Add Clerk User"}</DialogTitle>
+            <DialogTitle>{editing ? "Edit User Access" : "Add User"}</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 py-4">
             <div className="space-y-2">
@@ -234,7 +232,7 @@ export function UserManagement() {
               onClick={() => save.mutate()}
               disabled={save.isPending || !email.trim()}
             >
-              {save.isPending ? "Saving…" : editing ? "Save Changes" : "Authorize & Invite"}
+              {save.isPending ? "Saving…" : editing ? "Save Changes" : "Grant Access"}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -245,7 +243,7 @@ export function UserManagement() {
           <DialogHeader><DialogTitle>Remove Invoice Creator Access?</DialogTitle></DialogHeader>
           <p className="py-4">
             <strong>{deleteTarget?.email}</strong> will no longer be able to open this app.
-            Their shared Clerk account will remain available for other Excel Aquatics apps.
+            They can be re-added at any time.
           </p>
           <DialogFooter>
             <Button variant="outline" onClick={() => setDeleteTarget(null)}>Cancel</Button>

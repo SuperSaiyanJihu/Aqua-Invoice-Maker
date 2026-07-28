@@ -9,12 +9,10 @@ import { LayoutDashboard, Users, FileText, History, LogOut, ShieldCheck, Mail } 
 import { UserManagement } from "@/components/user-management";
 import { EmailTemplateSettings } from "@/components/email-template-settings";
 import { useAuth } from "@/hooks/use-auth";
-import { useClerk } from "@clerk/clerk-react";
 import logoImg from "@assets/Logo_1772310414809.png";
 
 export default function Home() {
   const { user, logout, isLoggingOut } = useAuth();
-  const { signOut } = useClerk();
   const [activeTab, setActiveTab] = useState("dashboard");
   const [selectedFamilyId, setSelectedFamilyId] = useState<number | null>(null);
   const [selectedBillingPeriodId, setSelectedBillingPeriodId] = useState<number | null>(null);
@@ -55,10 +53,7 @@ export default function Home() {
             <Button
               variant="outline"
               size="sm"
-              onClick={async () => {
-                await signOut().catch(() => undefined);
-                await logout();
-              }}
+              onClick={() => logout()}
               disabled={isLoggingOut}
             >
               <LogOut className="h-4 w-4 mr-1" />
