@@ -13,7 +13,7 @@ Invoice management system for Excel Aquatics swimming school in Colonie, NY. Gen
 - **Document History**: View past invoices/receipts (shows document type and billing type badges), re-download PDFs, delete records
 - **Google Sign-In**: Staff sign in with their Google account via OAuth
 - **Controlled Access**: Admins add an email to the allowlist and that Google account can sign in
-- **Protected Superadmin**: `info@goswimexcel.com` receives permanent superadmin access
+- **Protected Superadmins**: emails in `SUPER_ADMIN_EMAIL` receive permanent superadmin access
 
 ## Architecture
 
@@ -29,7 +29,7 @@ Invoice management system for Excel Aquatics swimming school in Colonie, NY. Gen
 | `DATABASE_URL` | Yes      | PostgreSQL connection string         |
 | `PORT`         | No       | Server port (default: 5000)          |
 | `SESSION_SECRET` | Yes | Random value of at least 32 characters |
-| `SUPER_ADMIN_EMAIL` | Yes | Permanent owner email (`info@goswimexcel.com`) |
+| `SUPER_ADMIN_EMAIL` | Yes | Permanent owner email(s), comma-separated |
 | `APP_URL` | Yes | Canonical deployed URL used for the OAuth redirect |
 | `GOOGLE_CLIENT_ID` | Yes | OAuth client ID from Google Cloud Console |
 | `GOOGLE_CLIENT_SECRET` | Yes | OAuth client secret from the same OAuth client |
@@ -38,7 +38,7 @@ Google OAuth is the login path. Create an OAuth 2.0 Client ID (type "Web
 application") in [Google Cloud Console](https://console.cloud.google.com/apis/credentials)
 and add `$APP_URL/api/auth/google/callback` as an authorized redirect URI.
 
-Access is allowlist-based: the superadmin email always has access, and admins
+Access is allowlist-based: the superadmin emails always have access, and admins
 grant other Google accounts access from **Users → Add User** — no invitation
 step is needed; once an email is added, that Google account can sign in.
 

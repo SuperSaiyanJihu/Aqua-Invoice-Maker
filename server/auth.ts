@@ -14,10 +14,16 @@ import {
 
 const emailSchema = z.string().trim().email().transform((email) => email.toLowerCase());
 
-function superAdminEmail(): string {
+// SUPER_ADMIN_EMAIL accepts a comma-separated list of permanent owner emails.
+function superAdminEmails(): string[] {
   return (process.env.SUPER_ADMIN_EMAIL || "info@goswimexcel.com")
-    .trim()
-    .toLowerCase();
+    .split(",")
+    .map((email) => email.trim().toLowerCase())
+    .filter(Boolean);
+}
+
+function isSuperAdminEmail(email: string): boolean {
+  return superAdminEmails().includes(email.trim().toLowerCase());
 }
 
 function safeEqual(left: string, right: string): boolean {
@@ -128,7 +134,7 @@ export async function setupAuth(app: Express) {
       if (!identity.emailVerified) {
         return res.redirect("/?error=email_unverified");
       }
-      const isSuperAdmin = identity.email === superAdminEmail();
+      const isSuperAdmin = isSuperAdminEmail(identity.email);
       const user = isSuperAdmin ? undefined : await storage.getUser(identity.email);
       if (!isSuperAdmin && !user) {
         return res.redirect("/?error=unauthorized");
@@ -188,23 +194,24 @@ export async function setupAuth(app: Express) {
     const users = await storage.getAllUsers();
     const sanitized = users
       .filter((user) => z.string().email().safeParse(user.username).success)
-      .filter((user) => user.username.toLowerCase() !== superAdminEmail())
+      .filter((user) => !isSuperAdminEmail(user.username))
       .map(({ passwordHash, ...user }) => ({
         ...user,
         email: user.username,
         isSuperAdmin: false,
       }));
     res.json([
-      {
-        id: 0,
-        username: superAdminEmail(),
-        email: superAdminEmail(),
+      // Synthesized pseudo-ids (0, -1, ...) so superadmins never collide with real rows.
+      ...superAdminEmails().map((email, index) => ({
+        id: -index,
+        username: email,
+        email,
         isAdmin: true,
         isSuperAdmin: true,
         mustChangePin: false,
         createdAt: new Date(0).toISOString(),
         updatedAt: new Date(0).toISOString(),
-      },
+      })),
       ...sanitized,
     ]);
   });
@@ -212,8 +219,8 @@ export async function setupAuth(app: Express) {
   app.post("/api/admin/users", async (req, res) => {
     try {
       const data = createUserSchema.parse(req.body);
-      if (data.email === superAdminEmail()) {
-        return res.status(400).json({ message: "The superadmin already has permanent access" });
+      if (isSuperAdminEmail(data.email)) {
+        return res.status(400).json({ message: "That superadmin already has permanent access" });
       }
       if (await storage.getUser(data.email)) {
         return res.status(409).json({ message: "That email already has access" });
@@ -240,14 +247,14 @@ export async function setupAuth(app: Express) {
       if (!Number.isSafeInteger(id)) return res.status(400).json({ message: "Invalid ID" });
       const target = await storage.getUserById(id);
       if (!target) return res.status(404).json({ message: "User not found" });
-      if (target.username.toLowerCase() === superAdminEmail()) {
-        return res.status(403).json({ message: "The superadmin account cannot be changed" });
+      if (isSuperAdminEmail(target.username)) {
+        return res.status(403).json({ message: "Superadmin accounts cannot be changed" });
       }
 
       const data = updateUserSchema.parse(req.body);
       if (data.email && data.email !== target.username) {
-        if (data.email === superAdminEmail()) {
-          return res.status(400).json({ message: "That email is reserved for the superadmin" });
+        if (isSuperAdminEmail(data.email)) {
+          return res.status(400).json({ message: "That email is reserved for a superadmin" });
         }
         if (await storage.getUser(data.email)) {
           return res.status(409).json({ message: "That email already has access" });
@@ -279,8 +286,8 @@ export async function setupAuth(app: Express) {
     if (!Number.isSafeInteger(id)) return res.status(400).json({ message: "Invalid ID" });
     const target = await storage.getUserById(id);
     if (!target) return res.status(404).json({ message: "User not found" });
-    if (target.username.toLowerCase() === superAdminEmail()) {
-      return res.status(403).json({ message: "The superadmin account cannot be removed" });
+    if (isSuperAdminEmail(target.username)) {
+      return res.status(403).json({ message: "Superadmin accounts cannot be removed" });
     }
     if (req.session.userId === id) {
       return res.status(400).json({ message: "You cannot remove your own access" });
